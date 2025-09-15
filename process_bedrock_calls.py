@@ -120,15 +120,9 @@ def get_team_for_user(user_name):
 def determine_tool_for_user(user_name):
     """
     Determine which tool a user is likely using based on their name or configuration.
+    Since tools section has been removed, always return the default tool.
     """
-    # Check if the user has tool configuration
-    if user_name in quota_config.get('users', {}):
-        tools = quota_config['users'][user_name].get('tools', {})
-        if tools:
-            # Return the first tool in the configuration
-            return next(iter(tools.keys()))
-    
-    # Default tool
+    # Always return the default tool since tools configuration has been removed
     return DEFAULT_TOOL
 
 def extract_user_name(user_identity):

@@ -959,8 +959,9 @@
         // Load quota configuration
         async function loadQuotaConfig() {
             try {
-                // Load configuration from quota_config.json file
-                const response = await fetch('quota_config.json');
+                // Load configuration from quota_config.json file with cache busting
+                const cacheBuster = new Date().getTime();
+                const response = await fetch(`quota_config.json?v=${cacheBuster}`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -1460,8 +1461,8 @@
                 }
                 
                 const userQuota = quotaConfig?.users?.[username] || { 
-                    monthly_limit: 3500, 
-                    daily_limit: 150,
+                    monthly_limit: 5000, 
+                    daily_limit: 250,
                     warning_threshold: 60, 
                     critical_threshold: 85 
                 };
@@ -1531,8 +1532,8 @@
             
             allUsers.forEach(username => {
                 const userQuota = quotaConfig?.users?.[username] || { 
-                    monthly_limit: 3500, 
-                    daily_limit: 150,
+                    monthly_limit: 5000, 
+                    daily_limit: 250,
                     warning_threshold: 60, 
                     critical_threshold: 85 
                 };

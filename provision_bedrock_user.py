@@ -220,17 +220,11 @@ def check_user_in_quota_config(username, team_group, quota_config):
         
         # Add user with default values
         users[username] = {
-            "monthly_limit": 3500,  # 3,500 per user per month
-            "daily_limit": 150,     # 150 per user per day
+            "monthly_limit": 5000,  # 5,000 per user per month
+            "daily_limit": 250,     # 250 per user per day
             "warning_threshold": 60,
             "critical_threshold": 85,
-            "team": team_group,
-            "tools": {
-                DEFAULT_TOOL: {
-                    "monthly_limit": 3000,
-                    "daily_limit": 120
-                }
-            }
+            "team": team_group
         }
     elif 'team' not in users[username]:
         print(f"Warning: User {username} does not have a team assigned in quota configuration.")
@@ -266,6 +260,56 @@ def check_user_in_quota_config(username, team_group, quota_config):
         print(f"Error saving quota configuration: {str(e)}")
     
     return quota_config
+
+def create_bedrock_policy_for_user(username):
+    """Create and attach Bedrock policy for the user."""
+    policy_name = f"{username}_BedrockPolicy"
+    policy_document = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream"
+                ],
+                "Resource": [
+                    "arn:aws:bedrock:eu-west-1:701055077130:inference-profile/eu.anthropic.claude-*",
+                    "arn:aws:bedrock:eu-west-1:701055077130:inference-profile/eu.amazon.nova-*"
+                ]
+            }
+        ]
+    }
+    
+    try:
+        # Check if policy already exists
+        try:
+            iam_client.get_policy(PolicyArn=f"arn:aws:iam::701055077130:policy/{policy_name}")
+            print(f"Policy {policy_name} already exists.")
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'NoSuchEntity':
+                # Create the policy
+                print(f"Creating Bedrock policy {policy_name}...")
+                response = iam_client.create_policy(
+                    PolicyName=policy_name,
+                    PolicyDocument=json.dumps(policy_document)
+                )
+                print(f"Policy {policy_name} created successfully.")
+            else:
+                print(f"Error checking policy: {str(e)}")
+                return False
+        
+        # Attach policy to user
+        print(f"Attaching policy {policy_name} to user {username}...")
+        iam_client.attach_user_policy(
+            UserName=username,
+            PolicyArn=f"arn:aws:iam::701055077130:policy/{policy_name}"
+        )
+        print(f"Policy {policy_name} attached to user {username}.")
+        return True
+    except ClientError as e:
+        print(f"Error creating/attaching Bedrock policy for user {username}: {str(e)}")
+        return False
 
 def ensure_cloudwatch_logs_access(username):
     """Ensure the user has CloudWatch Logs access."""
@@ -355,17 +399,13 @@ def ensure_metric_filters_exist(username, team_group):
     user_filter_name = f"{username}_usage_fixed"
     user_filter_pattern = f"{{ $.user = \"{username}\" }}"
     
-    # User tool metric filter
-    user_tool_filter_name = f"{username}_{DEFAULT_TOOL.replace(' ', '_')}_usage_fixed"
-    user_tool_filter_pattern = f"{{ $.user = \"{username}\" && $.tool = \"{DEFAULT_TOOL}\" }}"
-    
     # Team metric filter
     team_filter_name = f"{team_group}_usage_fixed"
     team_filter_pattern = f"{{ $.team = \"{team_group}\" }}"
     
+    # Tool metric filters are no longer needed since tools section has been removed
     filters = [
         (USER_LOG_GROUP, user_filter_name, user_filter_pattern, "BedrockUsage", "UserMetrics", {"User": "$.user"}),
-        (USER_LOG_GROUP, user_tool_filter_name, user_tool_filter_pattern, "BedrockToolUsage", "UserMetrics", {"User": "$.user", "Tool": "$.tool"}),
         (TEAM_LOG_GROUP, team_filter_name, team_filter_pattern, "BedrockTeamUsage", "TeamMetrics", {"Team": "$.team"})
     ]
     
@@ -612,6 +652,11 @@ def main():
     print("\nStep 4: Ensuring CloudWatch Logs access...")
     if not ensure_cloudwatch_logs_access(username):
         print("Warning: Failed to ensure CloudWatch Logs access. Continuing anyway...")
+    
+    # Step 4.5: Create and attach Bedrock policy for user
+    print(f"\nStep 4.5: Creating Bedrock policy for user {username}...")
+    if not create_bedrock_policy_for_user(username):
+        print("Warning: Failed to create Bedrock policy. Continuing anyway...")
     
     # Step 5: Ensure log groups exist
     print("\nStep 5: Ensuring log groups exist...")

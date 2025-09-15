@@ -243,12 +243,8 @@ def main():
         else:
             user_failures += 1
         
-        # Update tool metric filters for this user
-        for tool in user_config.get('tools', {}).keys():
-            if update_user_tool_metric_filter(user, tool):
-                tool_successes += 1
-            else:
-                tool_failures += 1
+        # Tool metric filters are no longer needed since tools section has been removed
+        # All users now use a single unified tool approach
     
     # Process all teams
     for team in quota_config.get('teams', {}).keys():
