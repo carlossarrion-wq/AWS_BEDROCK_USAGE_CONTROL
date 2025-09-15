@@ -251,8 +251,25 @@ def has_administrative_protection(user_id, usage_record):
 - **Bloqueo Manual**: Interfaz para bloquear usuarios con razones personalizadas
 - **Duraciones Configurables**: 1 día, 30 días, 90 días, personalizada, indefinida
 - **Estado en Tiempo Real**: Visualización del estado actual de todos los usuarios
-- **Historial Paginado**: Navegación por historial de operaciones
+- **Historial Paginado**: Navegación por historial de operaciones con exportación completa
 - **Integración Lambda**: Comunicación directa con funciones Lambda
+- **Exportación Completa**: Descarga de todos los registros de operaciones (no solo página actual)
+
+#### **Sistema de Exportación Avanzado**:
+- **Exportación Universal**: Botones de exportación CSV en todas las tablas del dashboard
+- **Datos Completos**: Exporta todos los registros disponibles, no limitado por paginación
+- **Formato Profesional**: Archivos CSV con nombres descriptivos y timestamps
+- **Limpieza Automática**: Procesamiento inteligente de progress bars, badges y caracteres especiales
+- **Iconos Personalizados**: Interfaz con iconos PNG personalizados para mejor UX
+
+#### **Tablas con Exportación CSV**:
+1. **User Usage Details** - Detalles completos de uso por usuario
+2. **Team Usage Details** - Información de consumo por equipos
+3. **Users in Team** - Listado de usuarios por equipo
+4. **User Consumption - Last 10 Days** - Historial de consumo de 10 días
+5. **Model Usage by Team** - Uso de modelos por equipo
+6. **Current User Status & Manual Blocking** - Estado actual y gestión de bloqueos
+7. **Recent Blocking Operations** - Historial completo de operaciones (TODOS los registros)
 
 ## 🚀 Guía de Instalación y Despliegue
 

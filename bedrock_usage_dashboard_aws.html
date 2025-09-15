@@ -395,6 +395,34 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        
+        /* Export button styles */
+        .export-button {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            color: #6c757d;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .export-button:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+        }
+        
+        .export-icon {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+        }
     </style>
 </head>
 <body>
@@ -447,14 +475,18 @@
                     </div>
                 </div>
                 
-                <div class="card" style="margin-top: 20px;">
+                <div class="card" style="margin-top: 20px; position: relative;">
                     <h2>User Usage Details</h2>
+                    <button class="export-button" onclick="exportUserUsageTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
                     <table id="user-usage-table">
                         <thead>
                             <tr>
                                 <th>User</th>
                                 <th>Person</th>
                                 <th>Team</th>
+                                <th>Blocking Status</th>
                                 <th>Daily Requests</th>
                                 <th>Daily Limit</th>
                                 <th>Daily Usage</th>
@@ -465,7 +497,7 @@
                         </thead>
                         <tbody>
                             <tr>
-                                <td colspan="9">
+                                <td colspan="10">
                                     <div class="loading-spinner"></div>
                                     Connecting to AWS and loading data...
                                 </td>
@@ -521,8 +553,11 @@
                 </div>
                 
                 <div class="dashboard" style="margin-top: 20px;">
-                    <div class="card">
+                    <div class="card" style="position: relative;">
                         <h2>Team Usage Details</h2>
+                        <button class="export-button" onclick="exportTeamUsageTable()" title="Export to CSV">
+                            <img src="export.png" alt="Export" class="export-icon">
+                        </button>
                         <table id="team-usage-table">
                             <thead>
                                 <tr>
@@ -545,8 +580,11 @@
                         </table>
                     </div>
                     
-                    <div class="card">
+                    <div class="card" style="position: relative;">
                         <h2>Users in Team</h2>
+                        <button class="export-button" onclick="exportTeamUsersTable()" title="Export to CSV">
+                            <img src="export.png" alt="Export" class="export-icon">
+                        </button>
                         <table id="team-users-table">
                             <thead>
                                 <tr>
@@ -596,8 +634,11 @@
                     </button>
                 </div>
                 
-                <div class="card" style="margin-top: 20px;">
+                <div class="card" style="margin-top: 20px; position: relative;">
                     <h2>User Consumption - Last 10 Days</h2>
+                    <button class="export-button" onclick="exportConsumptionDetailsTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
                     <table id="consumption-details-table">
                         <thead>
                             <tr>
@@ -628,7 +669,17 @@
                 </div>
                 
                 <div class="card" style="margin-top: 20px;">
+                    <h2>Daily Usage Trend - Last 10 Days</h2>
+                    <div class="chart-container">
+                        <canvas id="consumption-details-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card" style="margin-top: 20px; position: relative;">
                     <h2>Model Usage by Team</h2>
+                    <button class="export-button" onclick="exportModelUsageTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
                     <table id="model-usage-table">
                         <thead>
                             <tr>
@@ -664,8 +715,11 @@
                     </button>
                 </div>
                 
-                <div class="card">
+                <div class="card" style="position: relative;">
                     <h2>Current User Status & Manual Blocking</h2>
+                    <button class="export-button" onclick="exportUserBlockingStatusTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
                     <div class="admin-controls">
                         <div class="blocking-controls">
                             <h3>Manual Block User</h3>
@@ -714,8 +768,11 @@
                     </table>
                 </div>
                 
-                <div class="card">
+                <div class="card" style="position: relative; margin-top: 20px;">
                     <h2>Recent Blocking Operations</h2>
+                    <button class="export-button" onclick="exportBlockingOperationsTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
                     <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
                         <div class="pagination-info">
                             <span id="operations-info">Showing 0-0 of 0 operations</span>
@@ -789,6 +846,7 @@
         let teamMonthlyChart;
         let teamDailyChart;
         let modelDistributionChart;
+        let consumptionDetailsChart;
         
         // Quota configuration
         let quotaConfig = null;
@@ -1438,18 +1496,17 @@
         }
         
         // Load user usage details
-        function loadUserUsageDetails() {
+        async function loadUserUsageDetails() {
             const tableBody = document.querySelector('#user-usage-table tbody');
             tableBody.innerHTML = '';
             
-            const usersWithDailyUsage = allUsers.map(username => {
-                const dailyTotal = userMetrics[username]?.daily?.[8] || 0;
-                return { username, dailyTotal };
-            });
+            // Sort users alphabetically by username (ascending)
+            const sortedUsers = [...allUsers].sort((a, b) => a.localeCompare(b));
             
-            usersWithDailyUsage.sort((a, b) => a.dailyTotal - b.dailyTotal);
+            // Get blocking status for all users first
+            await updateUserBlockingStatus();
             
-            usersWithDailyUsage.forEach(({ username }) => {
+            sortedUsers.forEach((username) => {
                 const personTag = getUserPersonTag(username) || "Unknown";
                 
                 let userTeam = "Unknown";
@@ -1489,11 +1546,22 @@
                     dailyColorClass = 'warning';
                 }
                 
+                // Get blocking status for this user
+                let statusBadge = `<span class="status-badge active" style="cursor: pointer;" onclick="navigateToBlockingTab()">Active</span>`;
+                
+                // Check if user is blocked (get real status from Lambda)
+                if (userBlockingStatus && userBlockingStatus[username]) {
+                    statusBadge = `<span class="status-badge blocked" style="cursor: pointer;" onclick="navigateToBlockingTab()">Blocked</span>`;
+                } else if (userAdminProtection && userAdminProtection[username]) {
+                    statusBadge = `<span class="status-badge active-admin" style="cursor: pointer;" onclick="navigateToBlockingTab()">Active Admin</span>`;
+                }
+                
                 tableBody.innerHTML += `
                     <tr>
                         <td>${username}</td>
                         <td>${personTag}</td>
                         <td>${userTeam}</td>
+                        <td>${statusBadge}</td>
                         <td>${dailyTotal}</td>
                         <td>${dailyLimit}</td>
                         <td>
@@ -1881,6 +1949,9 @@
             
             const sortedUsers = [...allUsers].sort();
             
+            // Array to store daily totals
+            const dailyTotals = Array(10).fill(0);
+            
             sortedUsers.forEach(username => {
                 const personTag = getUserPersonTag(username) || "Unknown";
                 
@@ -1911,11 +1982,31 @@
                     
                     const consumption = dailyData[dataIndex] || 0;
                     rowHtml += `<td>${consumption}</td>`;
+                    
+                    // Add to daily totals
+                    dailyTotals[i] += consumption;
                 }
                 
                 rowHtml += '</tr>';
                 tableBody.innerHTML += rowHtml;
             });
+            
+            // Add totals row
+            if (allUsers.length > 0) {
+                let totalsRowHtml = `
+                    <tr style="border-top: 2px solid #1e4a72; background-color: #f8f9fa;">
+                        <td style="font-weight: bold;">TOTAL</td>
+                        <td style="font-weight: bold;">-</td>
+                        <td style="font-weight: bold;">-</td>
+                `;
+                
+                for (let i = 0; i < 10; i++) {
+                    totalsRowHtml += `<td style="font-weight: bold;">${dailyTotals[i]}</td>`;
+                }
+                
+                totalsRowHtml += '</tr>';
+                tableBody.innerHTML += totalsRowHtml;
+            }
             
             if (allUsers.length === 0) {
                 tableBody.innerHTML = `
@@ -1923,6 +2014,77 @@
                         <td colspan="13">No users found</td>
                     </tr>
                 `;
+            }
+            
+            // Update the consumption details chart
+            updateConsumptionDetailsChart(dailyTotals);
+        }
+        
+        // Update consumption details chart
+        function updateConsumptionDetailsChart(dailyTotals) {
+            // Create labels for the last 10 days
+            const dateLabels = [];
+            for (let i = 9; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                
+                if (i === 0) {
+                    dateLabels.push('Today');
+                } else {
+                    dateLabels.push(moment(date).format('D MMM'));
+                }
+            }
+            
+            const chartData = {
+                labels: dateLabels,
+                datasets: [{
+                    label: 'Total Daily Requests',
+                    data: dailyTotals,
+                    backgroundColor: '#1e4a72',
+                    borderColor: '#1e4a72',
+                    borderWidth: 1
+                }]
+            };
+            
+            if (consumptionDetailsChart) {
+                consumptionDetailsChart.data = chartData;
+                consumptionDetailsChart.update();
+            } else {
+                consumptionDetailsChart = new Chart(
+                    document.getElementById('consumption-details-chart'),
+                    {
+                        type: 'bar',
+                        data: chartData,
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Total Daily Usage - Last 10 Days'
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Total Requests'
+                                    }
+                                },
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Date'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                );
             }
         }
         
@@ -1961,6 +2123,10 @@
             const modelNames = ['Claude 3 Opus', 'Claude 3 Sonnet', 'Claude 3 Haiku', 'Claude 3.7 Sonnet', 'Claude 4', 'Amazon Titan'];
             const sortedTeams = [...ALL_TEAMS].sort();
             
+            // Array to store model totals
+            const modelTotals = Array(6).fill(0);
+            let grandTotal = 0;
+            
             sortedTeams.forEach(team => {
                 const teamTotal = teamMetrics[team]?.monthly || 0;
                 const teamHash = team.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -1984,20 +2150,45 @@
                     Math.round((teamTotal * percentage) / 100)
                 );
                 
+                // Calculate the sum of all model usage for this team
+                const teamModelSum = modelUsage.reduce((sum, usage) => sum + usage, 0);
+                
                 let rowHtml = `
                     <tr>
                         <td>${team}</td>
                 `;
                 
-                modelUsage.forEach(usage => {
+                modelUsage.forEach((usage, index) => {
                     rowHtml += `<td>${usage}</td>`;
+                    // Add to model totals
+                    modelTotals[index] += usage;
                 });
                 
-                rowHtml += `<td><strong>${teamTotal}</strong></td>`;
+                rowHtml += `<td><strong>${teamModelSum}</strong></td>`;
                 rowHtml += '</tr>';
                 
                 tableBody.innerHTML += rowHtml;
+                
+                // Add to grand total
+                grandTotal += teamTotal;
             });
+            
+            // Add totals row
+            if (ALL_TEAMS.length > 0) {
+                let totalsRowHtml = `
+                    <tr style="border-top: 2px solid #1e4a72; background-color: #f8f9fa;">
+                        <td style="font-weight: bold;">TOTAL</td>
+                `;
+                
+                modelTotals.forEach(total => {
+                    totalsRowHtml += `<td style="font-weight: bold;">${total}</td>`;
+                });
+                
+                totalsRowHtml += `<td style="font-weight: bold;"><strong>${grandTotal}</strong></td>`;
+                totalsRowHtml += '</tr>';
+                
+                tableBody.innerHTML += totalsRowHtml;
+            }
             
             if (ALL_TEAMS.length === 0) {
                 tableBody.innerHTML = `
@@ -2698,6 +2889,88 @@
         // Store user blocking status for dynamic button
         let userBlockingStatus = {};
         
+        // Store user admin protection status
+        let userAdminProtection = {};
+        
+        // Update user blocking status for all users
+        async function updateUserBlockingStatus() {
+            if (!isConnectedToAWS) {
+                console.log('Not connected to AWS, skipping blocking status update');
+                return;
+            }
+            
+            try {
+                console.log('Updating blocking status and admin protection for all users...');
+                
+                // Clear existing status
+                userBlockingStatus = {};
+                userAdminProtection = {};
+                
+                // Get blocking status and admin protection for each user
+                for (const username of allUsers) {
+                    try {
+                        // Get blocking status from Lambda
+                        const lambda = new AWS.Lambda();
+                        const params = {
+                            FunctionName: 'bedrock-policy-manager',
+                            Payload: JSON.stringify({
+                                action: 'check_status',
+                                user_id: username
+                            })
+                        };
+                        
+                        const result = await lambda.invoke(params).promise();
+                        const response = JSON.parse(result.Payload);
+                        
+                        if (response.statusCode === 200) {
+                            const data = JSON.parse(response.body);
+                            userBlockingStatus[username] = data.is_blocked || false;
+                        } else {
+                            // Default to not blocked if we can't get status
+                            userBlockingStatus[username] = false;
+                        }
+                        
+                        // Check for administrative protection by querying DynamoDB directly
+                        try {
+                            const dynamodb = new AWS.DynamoDB.DocumentClient();
+                            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+                            
+                            const dbParams = {
+                                TableName: 'bedrock_user_daily_usage',
+                                Key: {
+                                    'user_id': username,
+                                    'date': today
+                                }
+                            };
+                            
+                            const dbResult = await dynamodb.get(dbParams).promise();
+                            if (dbResult.Item && dbResult.Item.admin_protection === true) {
+                                userAdminProtection[username] = true;
+                                console.log(`User ${username} has administrative protection`);
+                            } else {
+                                userAdminProtection[username] = false;
+                            }
+                        } catch (error) {
+                            console.error(`Error checking admin protection for user ${username}:`, error);
+                            userAdminProtection[username] = false;
+                        }
+                        
+                    } catch (error) {
+                        console.error(`Error getting blocking status for user ${username}:`, error);
+                        // Default to not blocked if there's an error
+                        userBlockingStatus[username] = false;
+                        userAdminProtection[username] = false;
+                    }
+                }
+                
+                console.log('Updated blocking status:', userBlockingStatus);
+                console.log('Updated admin protection:', userAdminProtection);
+                
+            } catch (error) {
+                console.error('Error updating user blocking status:', error);
+            }
+        }
+        
         // Pagination variables for operations history
         let operationsCurrentPage = 1;
         let operationsPageSize = 10;
@@ -2980,6 +3253,175 @@
             // Add event listener for user selection change
             document.getElementById('user-select').addEventListener('change', updateDynamicButton);
         });
+        
+        // Navigate to blocking management tab
+        function navigateToBlockingTab() {
+            showTab('blocking-management-tab');
+        }
+        
+        // Generic function to export any table to CSV
+        function exportTableToCSV(tableId, filename) {
+            try {
+                const table = document.getElementById(tableId);
+                const rows = table.querySelectorAll('tr');
+                
+                let csvContent = '';
+                
+                // Process each row
+                rows.forEach((row, index) => {
+                    const cells = row.querySelectorAll('th, td');
+                    const rowData = [];
+                    
+                    cells.forEach(cell => {
+                        let cellText = cell.textContent.trim();
+                        
+                        // Clean up progress bar text (remove percentage and keep only the number)
+                        if (cellText.includes('%') && cellText.includes('\n')) {
+                            // Extract just the percentage value
+                            const percentageMatch = cellText.match(/(\d+)%/);
+                            if (percentageMatch) {
+                                cellText = percentageMatch[1] + '%';
+                            }
+                        }
+                        
+                        // Handle status badges - extract just the text
+                        if (cell.querySelector('.status-badge')) {
+                            const badge = cell.querySelector('.status-badge');
+                            cellText = badge.textContent.trim();
+                        }
+                        
+                        // Escape commas and quotes in CSV
+                        if (cellText.includes(',') || cellText.includes('"') || cellText.includes('\n')) {
+                            cellText = '"' + cellText.replace(/"/g, '""') + '"';
+                        }
+                        
+                        rowData.push(cellText);
+                    });
+                    
+                    // Skip empty rows or loading rows
+                    if (rowData.length > 0 && !rowData[0].includes('loading') && !rowData[0].includes('Connecting')) {
+                        csvContent += rowData.join(',') + '\n';
+                    }
+                });
+                
+                // Create and download the file
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    
+                    // Generate filename with current date
+                    const now = new Date();
+                    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+                    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS format
+                    
+                    link.setAttribute('download', `${filename}-${dateStr}-${timeStr}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    // Show success message
+                    updateConnectionStatus('success', `${filename} exported successfully`);
+                }
+            } catch (error) {
+                console.error('Error exporting table:', error);
+                updateConnectionStatus('error', 'Failed to export data: ' + error.message);
+            }
+        }
+        
+        // Export functions for each table
+        function exportUserUsageTable() {
+            exportTableToCSV('user-usage-table', 'user-usage-details');
+        }
+        
+        function exportTeamUsageTable() {
+            exportTableToCSV('team-usage-table', 'team-usage-details');
+        }
+        
+        function exportTeamUsersTable() {
+            exportTableToCSV('team-users-table', 'users-in-team');
+        }
+        
+        function exportConsumptionDetailsTable() {
+            exportTableToCSV('consumption-details-table', 'user-consumption-last-10-days');
+        }
+        
+        function exportModelUsageTable() {
+            exportTableToCSV('model-usage-table', 'model-usage-by-team');
+        }
+        
+        function exportUserBlockingStatusTable() {
+            exportTableToCSV('user-blocking-status-table', 'current-user-status-manual-blocking');
+        }
+        
+        function exportBlockingOperationsTable() {
+            exportAllBlockingOperationsToCSV();
+        }
+        
+        // Export ALL blocking operations (not just current page)
+        function exportAllBlockingOperationsToCSV() {
+            try {
+                if (allOperations.length === 0) {
+                    updateConnectionStatus('error', 'No operations data to export');
+                    return;
+                }
+                
+                let csvContent = '';
+                
+                // Add CSV headers
+                csvContent += 'Timestamp,User,Person,Operation,Reason,Performed By\n';
+                
+                // Process all operations (not just current page)
+                allOperations.forEach(op => {
+                    const timestamp = formatDateTime(op.timestamp, true);
+                    const userId = op.user_id || 'Unknown';
+                    const personTag = getUserPersonTag(op.user_id) || 'Unknown';
+                    const operation = op.operation || 'Unknown';
+                    const reason = op.reason || 'No reason provided';
+                    const performedBy = op.performed_by || 'System';
+                    
+                    // Escape commas and quotes in CSV
+                    const rowData = [timestamp, userId, personTag, operation, reason, performedBy].map(field => {
+                        let fieldText = String(field).trim();
+                        if (fieldText.includes(',') || fieldText.includes('"') || fieldText.includes('\n')) {
+                            fieldText = '"' + fieldText.replace(/"/g, '""') + '"';
+                        }
+                        return fieldText;
+                    });
+                    
+                    csvContent += rowData.join(',') + '\n';
+                });
+                
+                // Create and download the file
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    
+                    // Generate filename with current date
+                    const now = new Date();
+                    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+                    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS format
+                    
+                    link.setAttribute('download', `recent-blocking-operations-ALL-${dateStr}-${timeStr}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    // Show success message with count
+                    updateConnectionStatus('success', `All ${allOperations.length} blocking operations exported successfully`);
+                }
+            } catch (error) {
+                console.error('Error exporting all blocking operations:', error);
+                updateConnectionStatus('error', 'Failed to export operations data: ' + error.message);
+            }
+        }
         
         // Auto-load blocking data when switching to blocking tab
         function showTab(tabId) {
