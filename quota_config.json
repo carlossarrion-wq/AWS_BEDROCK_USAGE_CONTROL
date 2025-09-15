@@ -1,0 +1,247 @@
+{
+  "teams": {
+    "team_darwin": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    },
+    "team_darwin_group": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    },
+    "team_lcorp_group": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    },
+    "team_mulesoft_group": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    },
+    "team_sap_group": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    },
+    "team_yo_leo_gas_group": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    },
+    "test_team": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
+    }
+  },
+  "users": {
+    "darwin_001": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_darwin_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "darwin_002": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_darwin_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "lcorp_001": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_lcorp_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "mulesoft_001": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_mulesoft_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "mulesoft_002": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_mulesoft_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "mulesoft_003": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_mulesoft_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "sap_001": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_sap_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "sap_002": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_sap_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "sap_003": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_sap_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "sap_004": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_sap_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "team_darwin_usr_001": {
+      "critical_threshold": 80,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 50
+    },
+    "test_user": {
+      "critical_threshold": 85,
+      "daily_limit": 100,
+      "monthly_limit": 2000,
+      "tools": {
+        "TestTool": {
+          "daily_limit": 75,
+          "monthly_limit": 1500
+        }
+      },
+      "warning_threshold": 60
+    },
+    "test_user_001": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_mulesoft_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "yo_leo_gas_001": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_yo_leo_gas_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "yo_leo_gas_002": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_yo_leo_gas_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    },
+    "yo_leo_gas_004": {
+      "critical_threshold": 85,
+      "daily_limit": 150,
+      "monthly_limit": 3500,
+      "team": "team_yo_leo_gas_group",
+      "tools": {
+        "Cline Agent": {
+          "daily_limit": 120,
+          "monthly_limit": 3000
+        }
+      },
+      "warning_threshold": 60
+    }
+  }
+}

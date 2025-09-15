@@ -1,0 +1,694 @@
+#!/usr/bin/env python3
+"""
+AWS Bedrock Individual Blocking System - Policy Manager Lambda
+==============================================================
+
+This Lambda function manages IAM policies for user blocking/unblocking by:
+1. Adding/removing Deny statements to user policies dynamically
+2. Blocking users when daily limits are exceeded
+3. Unblocking users during daily reset or manual intervention
+4. Maintaining audit trail of all policy modifications
+
+Author: AWS Bedrock Usage Control System
+Version: 1.0.0
+"""
+
+import json
+import boto3
+import logging
+from datetime import datetime, date
+from typing import Dict, Any, Optional
+import os
+
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# AWS clients
+iam = boto3.client('iam')
+dynamodb = boto3.resource('dynamodb')
+sns = boto3.client('sns')
+lambda_client = boto3.client('lambda')
+
+# Configuration
+REGION = os.environ.get('AWS_REGION', 'eu-west-1')
+ACCOUNT_ID = os.environ.get('ACCOUNT_ID', '701055077130')
+TABLE_NAME = os.environ.get('DYNAMODB_TABLE', 'bedrock_user_daily_usage')
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', f'arn:aws:sns:{REGION}:{ACCOUNT_ID}:bedrock-usage-alerts')
+
+# Policy configuration
+BEDROCK_POLICY_SUFFIX = "_BedrockPolicy"
+DENY_STATEMENT_SID = "DailyLimitBlock"
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Main Lambda handler for managing IAM policies
+    
+    Args:
+        event: Event containing action, user_id, and other parameters
+        context: Lambda context object
+        
+    Returns:
+        Dict with status code and operation results
+    """
+    try:
+        logger.info(f"Processing policy management event: {json.dumps(event, default=str)}")
+        
+        # Validate required parameters
+        if 'action' not in event or 'user_id' not in event:
+            logger.error("Missing required parameters: action and user_id")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing required parameters: action and user_id'})
+            }
+        
+        action = event['action']
+        user_id = event['user_id']
+        reason = event.get('reason', 'unspecified')
+        
+        logger.info(f"Processing {action} action for user {user_id}, reason: {reason}")
+        
+        # Route to appropriate handler
+        if action == 'block':
+            result = block_user_access(user_id, reason, event.get('usage_record', {}), event)
+        elif action == 'unblock':
+            result = unblock_user_access(user_id, reason, event)
+        elif action == 'check_status':
+            result = check_user_block_status(user_id)
+        else:
+            logger.error(f"Invalid action: {action}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': f'Invalid action: {action}'})
+            }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error processing policy management event: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+
+def block_user_access(user_id: str, reason: str, usage_record: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Block user access by adding Deny statement to their IAM policy
+    
+    Args:
+        user_id: The user ID to block
+        reason: Reason for blocking
+        usage_record: Current usage record from DynamoDB
+        
+    Returns:
+        Dict with operation result
+    """
+    try:
+        logger.info(f"Blocking user {user_id} - Reason: {reason}")
+        
+        # Get user's Bedrock policy name
+        policy_name = f"{user_id}{BEDROCK_POLICY_SUFFIX}"
+        
+        # Get current policy or create base policy if it doesn't exist
+        current_policy = get_or_create_user_policy(user_id, policy_name)
+        
+        # Check if user is already blocked
+        if is_user_blocked(current_policy):
+            logger.info(f"User {user_id} is already blocked")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': f'User {user_id} is already blocked',
+                    'action': 'block',
+                    'user_id': user_id,
+                    'already_blocked': True
+                })
+            }
+        
+        # Create deny statement
+        deny_statement = create_deny_statement(user_id)
+        
+        # Remove any existing deny statement and add new one
+        updated_policy = add_deny_statement(current_policy, deny_statement)
+        
+        # Update the policy
+        iam.put_user_policy(
+            UserName=user_id,
+            PolicyName=policy_name,
+            PolicyDocument=json.dumps(updated_policy, separators=(',', ':'))
+        )
+        
+        # Get expiration date from event (frontend will calculate and send it)
+        expires_at = event.get('expires_at', 'Indefinite')
+        
+        # Update DynamoDB record
+        update_user_block_status(user_id, 'BLOCKED', reason, expires_at)
+        
+        # Send notification
+        send_block_notification(user_id, reason, usage_record)
+        
+        # Log operation to history
+        performed_by = event.get('performed_by', 'system')
+        log_operation_to_history(user_id, 'BLOCK', reason, performed_by, 'SUCCESS')
+        
+        logger.info(f"Successfully blocked user {user_id}")
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': f'User {user_id} blocked successfully',
+                'action': 'block',
+                'user_id': user_id,
+                'reason': reason,
+                'blocked_at': datetime.utcnow().isoformat()
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error blocking user {user_id}: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': f'Error blocking user {user_id}: {str(e)}',
+                'action': 'block',
+                'user_id': user_id
+            })
+        }
+
+def unblock_user_access(user_id: str, reason: str, event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Unblock user access by removing Deny statement from their IAM policy
+    
+    Args:
+        user_id: The user ID to unblock
+        reason: Reason for unblocking
+        
+    Returns:
+        Dict with operation result
+    """
+    try:
+        logger.info(f"Unblocking user {user_id} - Reason: {reason}")
+        
+        # Get user's Bedrock policy name
+        policy_name = f"{user_id}{BEDROCK_POLICY_SUFFIX}"
+        
+        try:
+            # Get current policy
+            response = iam.get_user_policy(UserName=user_id, PolicyName=policy_name)
+            current_policy = response['PolicyDocument']
+        except iam.exceptions.NoSuchEntityException:
+            logger.warning(f"Policy {policy_name} not found for user {user_id}")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': f'User {user_id} policy not found - already unblocked',
+                    'action': 'unblock',
+                    'user_id': user_id,
+                    'already_unblocked': True
+                })
+            }
+        
+        # Check if user is currently blocked
+        if not is_user_blocked(current_policy):
+            logger.info(f"User {user_id} is not currently blocked")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': f'User {user_id} is not currently blocked',
+                    'action': 'unblock',
+                    'user_id': user_id,
+                    'already_unblocked': True
+                })
+            }
+        
+        # Remove deny statement
+        updated_policy = remove_deny_statement(current_policy)
+        
+        # Update the policy
+        iam.put_user_policy(
+            UserName=user_id,
+            PolicyName=policy_name,
+            PolicyDocument=json.dumps(updated_policy, separators=(',', ':'))
+        )
+        
+        # Update DynamoDB record
+        update_user_block_status(user_id, 'ACTIVE', reason)
+        
+        # NEW: Set administrative protection if unblocked by admin (not system)
+        performed_by = event.get('performed_by', 'system')
+        if performed_by != 'system' and performed_by != 'daily_reset':
+            set_administrative_protection(user_id, performed_by)
+        
+        # Send notification
+        send_unblock_notification(user_id, reason)
+        
+        # Log operation to history
+        log_operation_to_history(user_id, 'UNBLOCK', reason, performed_by, 'SUCCESS')
+        
+        logger.info(f"Successfully unblocked user {user_id}")
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': f'User {user_id} unblocked successfully',
+                'action': 'unblock',
+                'user_id': user_id,
+                'reason': reason,
+                'unblocked_at': datetime.utcnow().isoformat()
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error unblocking user {user_id}: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': f'Error unblocking user {user_id}: {str(e)}',
+                'action': 'unblock',
+                'user_id': user_id
+            })
+        }
+
+def check_user_block_status(user_id: str) -> Dict[str, Any]:
+    """
+    Check if user is currently blocked
+    
+    Args:
+        user_id: The user ID to check
+        
+    Returns:
+        Dict with user block status
+    """
+    try:
+        logger.info(f"Checking block status for user {user_id}")
+        
+        # Get user's Bedrock policy name
+        policy_name = f"{user_id}{BEDROCK_POLICY_SUFFIX}"
+        
+        try:
+            # Get current policy
+            response = iam.get_user_policy(UserName=user_id, PolicyName=policy_name)
+            current_policy = response['PolicyDocument']
+            
+            is_blocked = is_user_blocked(current_policy)
+            
+        except iam.exceptions.NoSuchEntityException:
+            logger.info(f"Policy {policy_name} not found for user {user_id} - user is not blocked")
+            is_blocked = False
+        
+        # Get additional information from DynamoDB
+        block_type = 'None'
+        blocked_since = None
+        expires_at = None
+        
+        if is_blocked:
+            try:
+                table = dynamodb.Table(TABLE_NAME)
+                today = date.today().isoformat()
+                
+                response = table.get_item(
+                    Key={'user_id': user_id, 'date': today}
+                )
+                
+                if 'Item' in response:
+                    item = response['Item']
+                    blocked_since = item.get('blocked_at')
+                    block_type = 'Manual' if item.get('status') == 'BLOCKED' else 'None'
+                    
+                    # For now, we don't have expiration logic, but we can add it later
+                    expires_at = item.get('expires_at', 'Indefinite')
+                    
+            except Exception as dynamo_error:
+                logger.error(f"Error getting DynamoDB info for {user_id}: {str(dynamo_error)}")
+                # Continue with basic info
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'user_id': user_id,
+                'is_blocked': is_blocked,
+                'block_type': block_type,
+                'blocked_since': blocked_since,
+                'expires_at': expires_at,
+                'checked_at': datetime.utcnow().isoformat()
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking block status for user {user_id}: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': f'Error checking block status for user {user_id}: {str(e)}',
+                'user_id': user_id
+            })
+        }
+
+def get_or_create_user_policy(user_id: str, policy_name: str) -> Dict[str, Any]:
+    """
+    Get existing user policy or create a base policy if it doesn't exist
+    
+    Args:
+        user_id: The user ID
+        policy_name: The policy name
+        
+    Returns:
+        Dict with policy document
+    """
+    try:
+        # Try to get existing policy
+        response = iam.get_user_policy(UserName=user_id, PolicyName=policy_name)
+        return response['PolicyDocument']
+        
+    except iam.exceptions.NoSuchEntityException:
+        # Policy doesn't exist, create base policy
+        logger.info(f"Creating base Bedrock policy for user {user_id}")
+        
+        base_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "BedrockAccess",
+                    "Effect": "Allow",
+                    "Action": [
+                        "bedrock:InvokeModel",
+                        "bedrock:InvokeModelWithResponseStream"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+        
+        # Create the policy
+        iam.put_user_policy(
+            UserName=user_id,
+            PolicyName=policy_name,
+            PolicyDocument=json.dumps(base_policy, separators=(',', ':'))
+        )
+        
+        return base_policy
+
+def create_deny_statement(user_id: str) -> Dict[str, Any]:
+    """
+    Create deny statement for blocking user access
+    
+    Args:
+        user_id: The user ID to create deny statement for
+        
+    Returns:
+        Dict with deny statement
+    """
+    return {
+        "Sid": DENY_STATEMENT_SID,
+        "Effect": "Deny",
+        "Action": [
+            "bedrock:InvokeModel",
+            "bedrock:InvokeModelWithResponseStream"
+        ],
+        "Resource": "*",
+        "Condition": {
+            "StringEquals": {
+                "aws:username": user_id
+            }
+        }
+    }
+
+def add_deny_statement(policy: Dict[str, Any], deny_statement: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Add deny statement to policy (removing any existing deny statement first)
+    
+    Args:
+        policy: Current policy document
+        deny_statement: Deny statement to add
+        
+    Returns:
+        Updated policy document
+    """
+    # Remove any existing deny statement
+    policy['Statement'] = [
+        stmt for stmt in policy['Statement'] 
+        if stmt.get('Sid') != DENY_STATEMENT_SID
+    ]
+    
+    # Add new deny statement at the beginning (deny statements should be evaluated first)
+    policy['Statement'].insert(0, deny_statement)
+    
+    return policy
+
+def remove_deny_statement(policy: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Remove deny statement from policy
+    
+    Args:
+        policy: Current policy document
+        
+    Returns:
+        Updated policy document
+    """
+    policy['Statement'] = [
+        stmt for stmt in policy['Statement'] 
+        if stmt.get('Sid') != DENY_STATEMENT_SID
+    ]
+    
+    return policy
+
+def is_user_blocked(policy: Dict[str, Any]) -> bool:
+    """
+    Check if user is currently blocked based on policy
+    
+    Args:
+        policy: Policy document to check
+        
+    Returns:
+        True if user is blocked, False otherwise
+    """
+    for statement in policy.get('Statement', []):
+        if (statement.get('Sid') == DENY_STATEMENT_SID and 
+            statement.get('Effect') == 'Deny'):
+            return True
+    return False
+
+def update_user_block_status(user_id: str, status: str, reason: str, expires_at: str = None) -> None:
+    """
+    Update user block status in DynamoDB
+    
+    Args:
+        user_id: The user ID
+        status: New status (ACTIVE, BLOCKED)
+        reason: Reason for status change
+        expires_at: When the block expires (optional)
+    """
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        today = date.today().isoformat()
+        
+        update_expression = 'SET #status = :status, last_status_change = :now, last_status_reason = :reason'
+        expression_values = {
+            ':status': status,
+            ':now': datetime.utcnow().isoformat(),
+            ':reason': reason
+        }
+        
+        # Add specific timestamps based on status
+        if status == 'BLOCKED':
+            update_expression += ', blocked_at = :blocked_at'
+            expression_values[':blocked_at'] = datetime.utcnow().isoformat() + 'Z'
+            
+            # Add expiration date if provided
+            if expires_at:
+                update_expression += ', expires_at = :expires_at'
+                expression_values[':expires_at'] = expires_at
+            else:
+                update_expression += ', expires_at = :expires_at'
+                expression_values[':expires_at'] = 'Indefinite'
+                
+        elif status == 'ACTIVE':
+            update_expression += ', unblocked_at = :unblocked_at'
+            expression_values[':unblocked_at'] = datetime.utcnow().isoformat() + 'Z'
+            # Clear expiration when unblocking
+            update_expression += ', expires_at = :expires_at'
+            expression_values[':expires_at'] = None
+        
+        table.update_item(
+            Key={'user_id': user_id, 'date': today},
+            UpdateExpression=update_expression,
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues=expression_values
+        )
+        
+        logger.info(f"Updated DynamoDB status for {user_id} to {status} (expires: {expires_at})")
+        
+    except Exception as e:
+        logger.error(f"Error updating DynamoDB status for {user_id}: {str(e)}")
+        # Don't raise exception as this is not critical for the blocking operation
+
+def send_block_notification(user_id: str, reason: str, usage_record: Dict[str, Any]) -> None:
+    """
+    Send notification when user is blocked
+    
+    Args:
+        user_id: The user ID that was blocked
+        reason: Reason for blocking
+        usage_record: Current usage record
+    """
+    try:
+        message = {
+            'event_type': 'user_blocked',
+            'user_id': user_id,
+            'reason': reason,
+            'blocked_at': datetime.utcnow().isoformat(),
+            'current_usage': usage_record.get('request_count', 0),
+            'daily_limit': usage_record.get('daily_limit', 0),
+            'team': usage_record.get('team', 'unknown'),
+            'date': usage_record.get('date', date.today().isoformat())
+        }
+        
+        sns.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=f"Bedrock User Blocked: {user_id}",
+            Message=json.dumps(message, indent=2)
+        )
+        
+        logger.info(f"Sent block notification for {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error sending block notification for {user_id}: {str(e)}")
+
+def send_unblock_notification(user_id: str, reason: str) -> None:
+    """
+    Send notification when user is unblocked
+    
+    Args:
+        user_id: The user ID that was unblocked
+        reason: Reason for unblocking
+    """
+    try:
+        message = {
+            'event_type': 'user_unblocked',
+            'user_id': user_id,
+            'reason': reason,
+            'unblocked_at': datetime.utcnow().isoformat()
+        }
+        
+        sns.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=f"Bedrock User Unblocked: {user_id}",
+            Message=json.dumps(message, indent=2)
+        )
+        
+        logger.info(f"Sent unblock notification for {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error sending unblock notification for {user_id}: {str(e)}")
+
+def set_administrative_protection(user_id: str, performed_by: str) -> None:
+    """
+    Set administrative protection flag for user to prevent automatic blocking today
+    
+    Args:
+        user_id: The user ID to protect
+        performed_by: Who performed the manual unblock
+    """
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        today = date.today().isoformat()
+        
+        # Set admin_protection flag in DynamoDB
+        table.update_item(
+            Key={'user_id': user_id, 'date': today},
+            UpdateExpression='SET admin_protection = :protection, admin_protection_by = :by, admin_protection_at = :at',
+            ExpressionAttributeValues={
+                ':protection': True,
+                ':by': performed_by,
+                ':at': datetime.utcnow().isoformat()
+            }
+        )
+        
+        logger.info(f"Set administrative protection for {user_id} by {performed_by}")
+        
+    except Exception as e:
+        logger.error(f"Error setting administrative protection for {user_id}: {str(e)}")
+        # Don't raise exception as this is not critical for the main operation
+
+def log_operation_to_history(user_id: str, operation: str, reason: str, performed_by: str, status: str) -> None:
+    """
+    Log blocking/unblocking operation to history
+    
+    Args:
+        user_id: The user ID
+        operation: BLOCK or UNBLOCK
+        reason: Reason for the operation
+        performed_by: Who performed the operation
+        status: SUCCESS or FAILED
+    """
+    try:
+        operation_data = {
+            'action': 'log_operation',
+            'operation': {
+                'user_id': user_id,
+                'operation': operation,
+                'reason': reason,
+                'performed_by': performed_by,
+                'status': status,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+        }
+        
+        # Invoke bedrock-blocking-history Lambda function
+        lambda_client.invoke(
+            FunctionName='bedrock-blocking-history',
+            InvocationType='Event',  # Asynchronous invocation
+            Payload=json.dumps(operation_data)
+        )
+        
+        logger.info(f"Logged {operation} operation for {user_id} to history")
+        
+    except Exception as e:
+        logger.error(f"Error logging operation to history for {user_id}: {str(e)}")
+        # Don't raise exception as this is not critical for the main operation
+
+# For testing purposes
+if __name__ == "__main__":
+    # Test events
+    test_block_event = {
+        "action": "block",
+        "user_id": "test_user_001",
+        "reason": "daily_limit_exceeded",
+        "usage_record": {
+            "request_count": 55,
+            "daily_limit": 50,
+            "team": "test_team",
+            "date": "2025-01-15"
+        }
+    }
+    
+    test_unblock_event = {
+        "action": "unblock",
+        "user_id": "test_user_001",
+        "reason": "daily_reset"
+    }
+    
+    test_check_event = {
+        "action": "check_status",
+        "user_id": "test_user_001"
+    }
+    
+    # Mock context
+    class MockContext:
+        def __init__(self):
+            self.function_name = "bedrock-policy-manager"
+            self.memory_limit_in_mb = 256
+            self.invoked_function_arn = "arn:aws:lambda:eu-west-1:701055077130:function:bedrock-policy-manager"
+    
+    # Test the handlers
+    print("Testing block operation:")
+    result = lambda_handler(test_block_event, MockContext())
+    print(json.dumps(result, indent=2))
+    
+    print("\nTesting check status operation:")
+    result = lambda_handler(test_check_event, MockContext())
+    print(json.dumps(result, indent=2))
+    
+    print("\nTesting unblock operation:")
+    result = lambda_handler(test_unblock_event, MockContext())
+    print(json.dumps(result, indent=2))
