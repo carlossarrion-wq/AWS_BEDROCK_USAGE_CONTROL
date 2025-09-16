@@ -125,7 +125,7 @@
     },
     "yo_leo_gas_001": {
       "critical_threshold": 85,
-      "daily_limit": 250,
+      "daily_limit": 500,
       "monthly_limit": 5000,
       "team": "team_yo_leo_gas_group",
       "warning_threshold": 60

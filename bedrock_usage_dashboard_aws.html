@@ -752,6 +752,7 @@
                                 <th>Status</th>
                                 <th>Daily Usage</th>
                                 <th>Daily Limit</th>
+                                <th>Daily Usage</th>
                                 <th>Block Type</th>
                                 <th>Blocked Since</th>
                                 <th>Expires</th>
@@ -2540,6 +2541,14 @@
                 
                 const dailyUsage = userMetrics[username]?.daily?.[8] || 0;
                 const dailyLimit = userQuota.daily_limit;
+                const dailyPercentage = Math.round((dailyUsage / dailyLimit) * 100);
+                
+                let dailyColorClass = '';
+                if (dailyPercentage > userQuota.critical_threshold) {
+                    dailyColorClass = 'critical';
+                } else if (dailyPercentage > userQuota.warning_threshold) {
+                    dailyColorClass = 'warning';
+                }
                 
                 let statusBadge = `<span class="status-badge active">Active</span>`;
                 let rowClass = '';
@@ -2560,6 +2569,12 @@
                         <td>${statusBadge}</td>
                         <td>${dailyUsage}</td>
                         <td>${dailyLimit}</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill ${dailyColorClass}" style="width: ${dailyPercentage}%"></div>
+                            </div>
+                            ${dailyPercentage}%
+                        </td>
                         <td>${blockType}</td>
                         <td>${blockedSince}</td>
                         <td>${expires}</td>

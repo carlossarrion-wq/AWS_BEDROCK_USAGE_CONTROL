@@ -92,24 +92,60 @@ def create_user(username, group_name=None):
                 print(f"Error checking if user exists: {str(e)}")
                 return []
         
-        # Generate a random password that meets AWS password policy requirements
-        import random
+        # Generate a cryptographically secure random password that meets AWS password policy requirements
+        import secrets
         import string
         
-        # Ensure we have at least one of each required character type
-        lowercase = random.choice(string.ascii_lowercase)
-        uppercase = random.choice(string.ascii_uppercase)
-        digit = random.choice(string.digits)
-        symbol = random.choice("!@#$%^&*()")
+        def generate_secure_password(length=16):
+            """
+            Generate a cryptographically secure password that meets AWS password policy requirements.
+            
+            AWS Password Policy Requirements:
+            - Minimum 8 characters (we use 16 for better security)
+            - At least one uppercase letter
+            - At least one lowercase letter  
+            - At least one number
+            - At least one special character
+            
+            Args:
+                length (int): Password length (minimum 8, default 16)
+                
+            Returns:
+                str: Cryptographically secure password
+            """
+            if length < 8:
+                length = 8
+                
+            # Define character sets
+            lowercase_chars = string.ascii_lowercase
+            uppercase_chars = string.ascii_uppercase
+            digit_chars = string.digits
+            special_chars = "!@#$%^&*()"
+            all_chars = lowercase_chars + uppercase_chars + digit_chars + special_chars
+            
+            # Ensure we have at least one character from each required set
+            password_chars = [
+                secrets.choice(lowercase_chars),
+                secrets.choice(uppercase_chars),
+                secrets.choice(digit_chars),
+                secrets.choice(special_chars)
+            ]
+            
+            # Fill the remaining length with random characters from all sets
+            for _ in range(length - 4):
+                password_chars.append(secrets.choice(all_chars))
+            
+            # Shuffle the password characters using cryptographically secure random
+            # Convert to list for in-place shuffling
+            password_list = list(password_chars)
+            for i in range(len(password_list) - 1, 0, -1):
+                j = secrets.randbelow(i + 1)
+                password_list[i], password_list[j] = password_list[j], password_list[i]
+            
+            return ''.join(password_list)
         
-        # Fill the rest of the password with random characters
-        remaining_length = 12 - 4  # 4 characters are already chosen
-        remaining_chars = ''.join(random.choice(string.ascii_letters + string.digits + "!@#$%^&*()") for _ in range(remaining_length))
-        
-        # Combine all parts and shuffle
-        password_chars = list(lowercase + uppercase + digit + symbol + remaining_chars)
-        random.shuffle(password_chars)
-        password = ''.join(password_chars)
+        # Generate the secure password
+        password = generate_secure_password(16)
         
         # Create or update login profile with the password
         if not user_exists:
