@@ -138,8 +138,9 @@ def block_user_access(user_id: str, reason: str, usage_record: Dict[str, Any], e
             PolicyDocument=json.dumps(updated_policy, separators=(',', ':'))
         )
         
-        # Get expiration date from event (frontend will calculate and send it)
-        expires_at = event.get('expires_at', 'Indefinite')
+        # Calculate expiration date (24 hours from now)
+        from datetime import datetime, timedelta
+        expires_at = (datetime.utcnow() + timedelta(days=1)).isoformat() + 'Z'
         
         # Update DynamoDB record
         update_user_block_status(user_id, 'BLOCKED', reason, expires_at)

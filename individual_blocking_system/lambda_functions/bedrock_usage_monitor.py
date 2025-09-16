@@ -37,6 +37,7 @@ dynamodb = boto3.resource('dynamodb')
 iam = boto3.client('iam')
 lambda_client = boto3.client('lambda')
 sns = boto3.client('sns')
+cloudwatch = boto3.client('cloudwatch')
 
 # Configuration
 REGION = os.environ.get('AWS_REGION', 'eu-west-1')
@@ -107,8 +108,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'statusCode': 200,
             'body': json.dumps({
                 'user_id': user_info['user_id'],
-                'current_usage': usage_record['request_count'],
-                'daily_limit': usage_record['daily_limit'],
+                'current_usage': int(usage_record['request_count']) if isinstance(usage_record['request_count'], Decimal) else usage_record['request_count'],
+                'daily_limit': int(usage_record['daily_limit']) if isinstance(usage_record['daily_limit'], Decimal) else usage_record['daily_limit'],
                 'status': usage_record['status'],
                 'action_taken': action_taken
             }, cls=DecimalEncoder)
@@ -188,6 +189,7 @@ def update_daily_usage(user_info: Dict[str, str]) -> Dict[str, Any]:
         ttl_timestamp = int((datetime.utcnow().timestamp() + 86400 * 7))
         
         # Update item with auto-provisioning
+        # ALWAYS update team field to ensure consistency with current IAM tags
         response = table.update_item(
             Key={'user_id': user_id, 'date': today},
             UpdateExpression='''
@@ -196,7 +198,7 @@ def update_daily_usage(user_info: Dict[str, str]) -> Dict[str, Any]:
                     daily_limit = if_not_exists(daily_limit, :limit),
                     warning_threshold = if_not_exists(warning_threshold, :warning),
                     last_request_time = :now,
-                    team = if_not_exists(team, :team),
+                    team = :team,
                     #ttl = if_not_exists(#ttl, :ttl),
                     first_seen = if_not_exists(first_seen, :first_seen)
             ''',
@@ -233,6 +235,7 @@ def update_daily_usage(user_info: Dict[str, str]) -> Dict[str, Any]:
 def get_user_config_with_autodiscovery(user_id: str) -> Dict[str, Any]:
     """
     Get user configuration with automatic discovery from IAM tags and quota_config.json
+    Priority: quota_config.json explicit config > IAM tag-based team config > defaults
     
     Args:
         user_id: The user ID to get configuration for
@@ -244,25 +247,37 @@ def get_user_config_with_autodiscovery(user_id: str) -> Dict[str, Any]:
         # Try to load quota_config.json from the parent directory
         quota_config = load_quota_config()
         
+        # ALWAYS get IAM tags first for consistent team assignment
+        iam_team_name = 'unknown'
+        try:
+            user_tags_response = iam.list_user_tags(UserName=user_id)
+            user_tags = {tag['Key']: tag['Value'] for tag in user_tags_response['Tags']}
+            iam_team_name = user_tags.get('Team', 'unknown')
+            logger.info(f"Retrieved IAM team for {user_id}: {iam_team_name}")
+        except Exception as e:
+            logger.warning(f"Could not retrieve IAM tags for user {user_id}: {str(e)}")
+        
         # Check if user exists in current quota_config.json
         if user_id in quota_config.get('users', {}):
             user_config = quota_config['users'][user_id]
+            
+            # Use explicit config but OVERRIDE team with IAM tag for consistency
+            # This ensures team assignment is always based on current IAM tags
+            config_team = user_config.get('team', 'unknown')
+            final_team = iam_team_name if iam_team_name != 'unknown' else config_team
+            
+            logger.info(f"User {user_id} found in quota_config with team '{config_team}', using IAM team '{final_team}' for consistency")
+            
             return {
                 'daily_limit': user_config.get('daily_limit', 50),
                 'warning_threshold': int(user_config.get('daily_limit', 50) * user_config.get('warning_threshold', 80) / 100),
-                'team': user_config.get('team', 'unknown')
+                'team': final_team
             }
         
         # Auto-discover user information from IAM if not in quota_config
         try:
-            # Get user tags to determine team
-            user_tags_response = iam.list_user_tags(UserName=user_id)
-            user_tags = {tag['Key']: tag['Value'] for tag in user_tags_response['Tags']}
-            
-            team_name = user_tags.get('Team', 'unknown')
-            
-            # Check if team exists in quota_config.json
-            team_config = quota_config.get('teams', {}).get(team_name, {})
+            # Check if team exists in quota_config.json teams section
+            team_config = quota_config.get('teams', {}).get(iam_team_name, {})
             
             # Calculate user limits based on team configuration or defaults
             if team_config:
@@ -271,16 +286,20 @@ def get_user_config_with_autodiscovery(user_id: str) -> Dict[str, Any]:
                 user_daily_limit = max(50, team_monthly_limit // 30)  # Convert to daily, min 50
                 warning_percentage = team_config.get('warning_threshold', 80)
                 user_warning_threshold = int(user_daily_limit * warning_percentage / 100)
+                
+                logger.info(f"Auto-configured user {user_id} based on team '{iam_team_name}': daily_limit={user_daily_limit}, warning={user_warning_threshold}")
             else:
                 # Use default limits from configuration
                 config = DEFAULT_CONFIG
                 user_daily_limit = config['daily_limits']['default_user_limit']
                 user_warning_threshold = config['daily_limits']['default_warning_threshold']
+                
+                logger.info(f"Auto-configured user {user_id} with defaults (team '{iam_team_name}' not found in config): daily_limit={user_daily_limit}, warning={user_warning_threshold}")
             
             return {
                 'daily_limit': user_daily_limit,
                 'warning_threshold': user_warning_threshold,
-                'team': team_name
+                'team': iam_team_name
             }
             
         except Exception as e:
@@ -290,7 +309,7 @@ def get_user_config_with_autodiscovery(user_id: str) -> Dict[str, Any]:
             return {
                 'daily_limit': config['daily_limits']['default_user_limit'],
                 'warning_threshold': config['daily_limits']['default_warning_threshold'],
-                'team': 'unknown'
+                'team': iam_team_name  # Use IAM team even in fallback
             }
             
     except Exception as e:
@@ -310,11 +329,22 @@ def load_quota_config() -> Dict[str, Any]:
         Dictionary with quota configuration
     """
     try:
-        # In Lambda, we'll need to package this file or load from S3/Parameter Store
-        # For now, return empty config and rely on auto-discovery
-        logger.info("Loading quota config from environment or defaults")
-        return {'users': {}, 'teams': {}}
+        # Load quota_config.json from the same directory as this Lambda function
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(current_dir, 'quota_config.json')
         
+        logger.info(f"Loading quota config from {config_path}")
+        
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+            
+        logger.info(f"Successfully loaded quota config with {len(config.get('users', {}))} users and {len(config.get('teams', {}))} teams")
+        return config
+        
+    except FileNotFoundError:
+        logger.warning("quota_config.json not found, using empty config")
+        return {'users': {}, 'teams': {}}
     except Exception as e:
         logger.error(f"Error loading quota_config.json: {str(e)}")
         return {'users': {}, 'teams': {}}
@@ -386,6 +416,14 @@ def evaluate_limits_and_act(user_id: str, usage_record: Dict[str, Any]) -> str:
             logger.info(f"Emergency override user {user_id} - no limits applied")
             return "emergency_override"
         
+        # NEW: Check if user is blocked but block has expired
+        if current_status == 'BLOCKED':
+            if check_and_handle_expired_block(user_id, usage_record):
+                logger.info(f"User {user_id} block has expired - automatically unblocked")
+                # Update the status in our local record for further processing
+                usage_record['status'] = 'ACTIVE'
+                current_status = 'ACTIVE'
+        
         # Check if daily limit exceeded
         if current_count >= daily_limit:
             if current_status != 'BLOCKED':
@@ -442,7 +480,7 @@ def block_user(user_id: str, usage_record: Dict[str, Any]) -> None:
                 'user_id': user_id,
                 'reason': 'daily_limit_exceeded',
                 'usage_record': usage_record
-            })
+            }, cls=DecimalEncoder)
         )
         
         # Send notification
@@ -563,6 +601,81 @@ def has_administrative_protection(user_id: str, usage_record: Dict[str, Any]) ->
         # In case of error, err on the side of caution and allow blocking
         return False
 
+def check_and_handle_expired_block(user_id: str, usage_record: Dict[str, Any]) -> bool:
+    """
+    Check if user's block has expired and automatically unblock if so
+    
+    Args:
+        user_id: The user ID to check
+        usage_record: Current usage record from DynamoDB
+        
+    Returns:
+        True if user was unblocked due to expiration, False otherwise
+    """
+    try:
+        expires_at = usage_record.get('expires_at')
+        
+        # If no expiration date or set to 'Indefinite', don't auto-unblock
+        if not expires_at or expires_at == 'Indefinite':
+            logger.debug(f"User {user_id} has no expiration date or indefinite block")
+            return False
+        
+        # Parse expiration date
+        from datetime import datetime
+        try:
+            # Handle different datetime formats
+            if expires_at.endswith('Z'):
+                expiration_time = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+            else:
+                expiration_time = datetime.fromisoformat(expires_at)
+        except ValueError as e:
+            logger.error(f"Invalid expiration date format for user {user_id}: {expires_at} - {str(e)}")
+            return False
+        
+        # Check if block has expired
+        current_time = datetime.utcnow().replace(tzinfo=expiration_time.tzinfo) if expiration_time.tzinfo else datetime.utcnow()
+        
+        if current_time >= expiration_time:
+            logger.info(f"Block for user {user_id} has expired (expired at: {expires_at}, current: {current_time.isoformat()})")
+            
+            # Automatically unblock the user
+            try:
+                response = lambda_client.invoke(
+                    FunctionName=POLICY_MANAGER_FUNCTION,
+                    InvocationType='RequestResponse',  # Synchronous call for immediate result
+                    Payload=json.dumps({
+                        'action': 'unblock',
+                        'user_id': user_id,
+                        'reason': 'automatic_expiration',
+                        'performed_by': 'system'
+                    })
+                )
+                
+                # Parse response
+                response_payload = json.loads(response['Payload'].read())
+                
+                if response_payload.get('statusCode') == 200:
+                    logger.info(f"Successfully auto-unblocked expired user {user_id}")
+                    
+                    # Send notification about automatic unblock
+                    send_notification(user_id, 'AUTO_UNBLOCKED', usage_record)
+                    
+                    return True
+                else:
+                    logger.error(f"Failed to auto-unblock expired user {user_id}: {response_payload.get('body', 'Unknown error')}")
+                    return False
+                    
+            except Exception as unblock_error:
+                logger.error(f"Error auto-unblocking expired user {user_id}: {str(unblock_error)}")
+                return False
+        else:
+            logger.debug(f"Block for user {user_id} has not yet expired (expires at: {expires_at}, current: {current_time.isoformat()})")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error checking block expiration for user {user_id}: {str(e)}")
+        return False
+
 def send_notification(user_id: str, notification_type: str, usage_record: Dict[str, Any]) -> None:
     """
     Send notification via SNS
@@ -596,7 +709,8 @@ def send_notification(user_id: str, notification_type: str, usage_record: Dict[s
             'WARNING': f"Bedrock Usage Warning: {user_id}",
             'BLOCKED': f"Bedrock User Blocked: {user_id}",
             'DRY_RUN_BLOCK': f"Bedrock Dry Run Block: {user_id}",
-            'ADMIN_PROTECTED': f"Bedrock User Protected by Admin: {user_id}"
+            'ADMIN_PROTECTED': f"Bedrock User Protected by Admin: {user_id}",
+            'AUTO_UNBLOCKED': f"Bedrock User Auto-Unblocked: {user_id}"
         }
         
         subject = subjects.get(notification_type, f"Bedrock Notification: {user_id}")
