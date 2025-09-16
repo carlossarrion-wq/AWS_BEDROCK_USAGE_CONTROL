@@ -116,13 +116,6 @@
       "team": "team_sap_group",
       "warning_threshold": 60
     },
-    "test_sap_005": {
-      "critical_threshold": 85,
-      "daily_limit": 252,
-      "monthly_limit": 5000,
-      "team": "team_sap_group",
-      "warning_threshold": 60
-    },
     "test_user_001": {
       "critical_threshold": 85,
       "daily_limit": 250,
