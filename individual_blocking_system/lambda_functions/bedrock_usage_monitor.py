@@ -20,6 +20,8 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import Dict, Any, Optional
 import os
+import time
+import random
 
 # Custom JSON encoder for Decimal objects
 class DecimalEncoder(json.JSONEncoder):
@@ -679,81 +681,130 @@ def check_and_handle_expired_block(user_id: str, usage_record: Dict[str, Any]) -
         logger.error(f"Error checking block expiration for user {user_id}: {str(e)}")
         return False
 
-def publish_cloudwatch_metrics(user_id: str, usage_record: Dict[str, Any]) -> None:
+def publish_cloudwatch_metrics(user_id: str, usage_record: Dict[str, Any]) -> bool:
     """
     Publish real-time metrics to CloudWatch for dashboard consumption
+    WITH IMPROVED ERROR HANDLING AND RETRY LOGIC
     
     Args:
         user_id: The user ID
         usage_record: Current usage record from DynamoDB
+        
+    Returns:
+        bool: True if metrics were published successfully, False otherwise
     """
-    try:
-        current_count = int(usage_record['request_count']) if isinstance(usage_record['request_count'], Decimal) else usage_record['request_count']
-        team = usage_record.get('team', 'unknown')
-        
-        # Get current timestamp
-        timestamp = datetime.utcnow()
-        
-        # Prepare metric data for individual user
-        metric_data = [
-            {
-                'MetricName': 'BedrockUsage',
-                'Dimensions': [
-                    {
-                        'Name': 'User',
-                        'Value': user_id
-                    }
-                ],
-                'Value': 1,  # Each call represents 1 request
-                'Unit': 'Count',
-                'Timestamp': timestamp
-            }
-        ]
-        
-        # Add team-level metric if team is known
-        if team != 'unknown':
-            metric_data.append({
-                'MetricName': 'BedrockUsage',
-                'Dimensions': [
-                    {
-                        'Name': 'Team',
-                        'Value': team
-                    }
-                ],
-                'Value': 1,  # Each call represents 1 request
-                'Unit': 'Count',
-                'Timestamp': timestamp
-            })
+    max_retries = 3
+    base_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            current_count = int(usage_record['request_count']) if isinstance(usage_record['request_count'], Decimal) else usage_record['request_count']
+            team = usage_record.get('team', 'unknown')
             
-            # Add combined user+team metric for detailed analysis
-            metric_data.append({
-                'MetricName': 'BedrockUsage',
-                'Dimensions': [
-                    {
-                        'Name': 'User',
-                        'Value': user_id
-                    },
-                    {
-                        'Name': 'Team',
-                        'Value': team
-                    }
-                ],
-                'Value': 1,  # Each call represents 1 request
-                'Unit': 'Count',
-                'Timestamp': timestamp
-            })
-        
-        # Publish metrics to CloudWatch
-        cloudwatch.put_metric_data(
-            Namespace='UserMetrics',
-            MetricData=metric_data
-        )
-        
-        logger.info(f"Published CloudWatch metrics for {user_id} (team: {team}, current usage: {current_count})")
-        
-    except Exception as e:
-        logger.error(f"Error publishing CloudWatch metrics for {user_id}: {str(e)}")
-        # Don't raise the exception - metrics publishing failure shouldn't break the main flow
+            # Validate inputs
+            if not user_id or not isinstance(user_id, str):
+                logger.error(f"Invalid user_id: {user_id}")
+                return False
+            
+            if current_count < 0:
+                logger.error(f"Invalid request count for {user_id}: {current_count}")
+                return False
+            
+            # Get current timestamp
+            timestamp = datetime.utcnow()
+            
+            # Prepare metric data for individual user
+            metric_data = [
+                {
+                    'MetricName': 'BedrockUsage',
+                    'Dimensions': [
+                        {
+                            'Name': 'User',
+                            'Value': user_id
+                        }
+                    ],
+                    'Value': 1,  # Each call represents 1 request
+                    'Unit': 'Count',
+                    'Timestamp': timestamp
+                }
+            ]
+            
+            # Add team-level metric if team is known and valid
+            if team and team != 'unknown' and isinstance(team, str):
+                metric_data.append({
+                    'MetricName': 'BedrockUsage',
+                    'Dimensions': [
+                        {
+                            'Name': 'Team',
+                            'Value': team
+                        }
+                    ],
+                    'Value': 1,  # Each call represents 1 request
+                    'Unit': 'Count',
+                    'Timestamp': timestamp
+                })
+                
+                # Add combined user+team metric for detailed analysis
+                metric_data.append({
+                    'MetricName': 'BedrockUsage',
+                    'Dimensions': [
+                        {
+                            'Name': 'User',
+                            'Value': user_id
+                        },
+                        {
+                            'Name': 'Team',
+                            'Value': team
+                        }
+                    ],
+                    'Value': 1,  # Each call represents 1 request
+                    'Unit': 'Count',
+                    'Timestamp': timestamp
+                })
+            
+            # Validate metric data before publishing
+            for metric in metric_data:
+                if not metric.get('MetricName') or not metric.get('Dimensions'):
+                    logger.error(f"Invalid metric data for {user_id}: {metric}")
+                    return False
+            
+            # Publish metrics to CloudWatch with retry logic
+            try:
+                cloudwatch.put_metric_data(
+                    Namespace='UserMetrics',
+                    MetricData=metric_data
+                )
+                
+                logger.info(f"✅ Published CloudWatch metrics for {user_id} (team: {team}, current usage: {current_count}, attempt: {attempt + 1})")
+                return True
+                
+            except Exception as cloudwatch_error:
+                error_code = getattr(cloudwatch_error, 'response', {}).get('Error', {}).get('Code', '')
+                
+                if error_code == 'Throttling' or 'throttl' in str(cloudwatch_error).lower():
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(f"CloudWatch throttling for {user_id}, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"❌ CloudWatch throttling for {user_id} after {max_retries} attempts")
+                        return False
+                else:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(f"CloudWatch error for {user_id}: {str(cloudwatch_error)}, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"❌ CloudWatch publishing failed for {user_id} after {max_retries} attempts: {str(cloudwatch_error)}")
+                        return False
+            
+        except Exception as e:
+            logger.error(f"❌ Critical error in publish_cloudwatch_metrics for {user_id}: {str(e)}")
+            return False
+    
+    return False
 
 def send_notification(user_id: str, notification_type: str, usage_record: Dict[str, Any]) -> None:
     """
