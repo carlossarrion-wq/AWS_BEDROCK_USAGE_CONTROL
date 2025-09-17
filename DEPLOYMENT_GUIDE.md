@@ -39,16 +39,158 @@ aws sts get-caller-identity
 
 ### **2. Permisos IAM Requeridos**
 Tu usuario AWS necesita permisos para:
-- **Lambda**: Crear/actualizar funciones
+- **Lambda**: Crear/actualizar funciones y configurar roles
 - **DynamoDB**: Crear tablas y configurar TTL
-- **IAM**: Crear roles y políticas
-- **CloudWatch Events**: Crear reglas
+- **IAM**: Crear roles y políticas (CRÍTICO)
+- **CloudWatch**: Crear reglas de eventos y métricas
 - **SNS**: Crear topics (opcional)
 
 ### **3. Configuración de Cuenta**
 - **Región**: `eu-west-1`
 - **Account ID**: `701055077130`
 - **CloudTrail**: Habilitado para eventos de Bedrock
+
+### **4. ⚠️ CRÍTICO: Verificación de Roles IAM**
+**ANTES de cualquier despliegue, verificar que existen los roles IAM necesarios:**
+
+```bash
+# Verificar rol principal de Lambda
+aws iam get-role --role-name bedrock-usage-monitor-role
+
+# Verificar política del rol
+aws iam get-role-policy --role-name bedrock-usage-monitor-role --policy-name BedrockUsageMonitorPolicy
+```
+
+**Si los roles no existen, crearlos PRIMERO antes del despliegue.**
+
+---
+
+## 🔐 **PASO CRÍTICO: Creación de Roles IAM**
+
+### **⚠️ IMPORTANTE: Ejecutar ANTES del despliegue de Lambda**
+
+**Crear el rol principal `bedrock-usage-monitor-role` con TODOS los permisos necesarios:**
+
+```bash
+# 1. Crear el rol IAM
+aws iam create-role \
+  --role-name bedrock-usage-monitor-role \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "lambda.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }'
+
+# 2. Crear la política completa con TODOS los permisos necesarios
+aws iam put-role-policy \
+  --role-name bedrock-usage-monitor-role \
+  --policy-name BedrockUsageMonitorPolicy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource": "arn:aws:logs:eu-west-1:701055077130:*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:UpdateItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem"
+        ],
+        "Resource": "arn:aws:dynamodb:eu-west-1:701055077130:table/bedrock_user_daily_usage"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "dynamodb:Query"
+        ],
+        "Resource": "arn:aws:dynamodb:eu-west-1:701055077130:table/bedrock_blocking_history/index/user-date-index"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "lambda:InvokeFunction"
+        ],
+        "Resource": "arn:aws:lambda:eu-west-1:701055077130:function:bedrock-policy-manager"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "sns:Publish"
+        ],
+        "Resource": "arn:aws:sns:eu-west-1:701055077130:bedrock-usage-alerts"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "iam:ListUserTags",
+          "iam:GetUser"
+        ],
+        "Resource": "arn:aws:iam::701055077130:user/*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "cloudwatch:PutMetricData"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }'
+
+# 3. Verificar que el rol se creó correctamente
+aws iam get-role --role-name bedrock-usage-monitor-role
+aws iam get-role-policy --role-name bedrock-usage-monitor-role --policy-name BedrockUsageMonitorPolicy
+```
+
+### **✅ Verificación de Permisos Críticos**
+
+**Verificar que el rol tiene TODOS los permisos necesarios:**
+
+```bash
+# Verificar permisos de CloudWatch (CRÍTICO para métricas)
+aws iam get-role-policy --role-name bedrock-usage-monitor-role --policy-name BedrockUsageMonitorPolicy | grep -A 5 "cloudwatch:PutMetricData"
+
+# Verificar permisos de DynamoDB
+aws iam get-role-policy --role-name bedrock-usage-monitor-role --policy-name BedrockUsageMonitorPolicy | grep -A 5 "dynamodb"
+
+# Verificar permisos de IAM para tags de usuarios
+aws iam get-role-policy --role-name bedrock-usage-monitor-role --policy-name BedrockUsageMonitorPolicy | grep -A 5 "iam:ListUserTags"
+```
+
+### **🔧 Asignación Automática del Rol a Lambda**
+
+**Al desplegar la función Lambda, el rol se asigna automáticamente:**
+
+```bash
+# El comando de despliegue incluye la asignación del rol
+aws lambda update-function-code \
+  --function-name bedrock-usage-monitor \
+  --zip-file fileb://bedrock-usage-monitor-fixed-cloudwatch.zip \
+  --region eu-west-1
+
+# Verificar que el rol está asignado correctamente
+aws lambda get-function --function-name bedrock-usage-monitor --region eu-west-1 --query 'Configuration.Role'
+```
+
+**Resultado esperado:**
+```
+"arn:aws:iam::701055077130:role/bedrock-usage-monitor-role"
+```
 
 ---
 
@@ -89,7 +231,48 @@ aws dynamodb list-tables --query 'TableNames[?contains(@, `bedrock`)]'
 aws events list-rules --query 'Rules[?contains(Name, `bedrock`)].Name'
 ```
 
-### **Paso 4: Prueba del Sistema**
+### **Paso 4: Verificación Crítica Post-Despliegue**
+
+**⚠️ VERIFICAR INMEDIATAMENTE DESPUÉS DEL DESPLIEGUE:**
+
+```bash
+# 1. Verificar que el rol está asignado correctamente a Lambda
+aws lambda get-function --function-name bedrock-usage-monitor --region eu-west-1 --query 'Configuration.Role'
+
+# 2. Verificar permisos de CloudWatch (CRÍTICO)
+aws iam get-role-policy --role-name bedrock-usage-monitor-role --policy-name BedrockUsageMonitorPolicy | grep "cloudwatch:PutMetricData"
+
+# 3. Test rápido de CloudWatch metrics
+aws lambda invoke \
+  --function-name bedrock-usage-monitor \
+  --payload '{
+    "detail": {
+      "eventTime": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+      "eventSource": "bedrock.amazonaws.com",
+      "eventName": "InvokeModel",
+      "userIdentity": {
+        "type": "IAMUser",
+        "userName": "test_user_deployment",
+        "arn": "arn:aws:iam::701055077130:user/test_user_deployment"
+      }
+    }
+  }' \
+  response.json
+
+# 4. Verificar logs para confirmar éxito
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/bedrock-usage-monitor \
+  --start-time $(date -d '5 minutes ago' +%s)000 \
+  --filter-pattern "✅ Published CloudWatch metrics"
+```
+
+**Resultados esperados:**
+- ✅ Rol asignado: `"arn:aws:iam::701055077130:role/bedrock-usage-monitor-role"`
+- ✅ Permisos CloudWatch: `"cloudwatch:PutMetricData"`
+- ✅ Lambda ejecuta sin errores
+- ✅ Logs muestran: `"✅ Published CloudWatch metrics for test_user_deployment"`
+
+### **Paso 5: Prueba del Sistema**
 ```bash
 # Ejecutar test de protección administrativa
 ./test_admin_protection.sh
