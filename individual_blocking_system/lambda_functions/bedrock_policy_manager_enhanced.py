@@ -167,12 +167,15 @@ def block_user_access(user_id: str, reason: str, usage_record: Dict[str, Any], e
         # Update DynamoDB record
         update_user_block_status(user_id, 'BLOCKED', reason, expires_at)
         
+        # NEW: Set admin_protection_by field to track who performed the block
+        performed_by = event.get('performed_by', 'system')
+        set_block_performed_by(user_id, performed_by)
+        
         # Add expires_at to usage_record for email notification
         usage_record_with_expiration = usage_record.copy()
         usage_record_with_expiration['expires_at'] = expires_at
         
         # Send notification (including enhanced email for admin blocks)
-        performed_by = event.get('performed_by', 'system')
         send_block_notification(user_id, reason, usage_record_with_expiration, performed_by)
         
         # Log operation to history
@@ -635,6 +638,33 @@ def send_unblock_notification(user_id: str, reason: str, performed_by: str) -> N
         
     except Exception as e:
         logger.error(f"Error sending unblock notification for {user_id}: {str(e)}")
+
+def set_block_performed_by(user_id: str, performed_by: str) -> None:
+    """
+    Set who performed the block operation in DynamoDB
+    
+    Args:
+        user_id: The user ID that was blocked
+        performed_by: Who performed the block (admin user or 'system')
+    """
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        today = date.today().isoformat()
+        
+        # Set admin_protection_by field to track who performed the block
+        table.update_item(
+            Key={'user_id': user_id, 'date': today},
+            UpdateExpression='SET admin_protection_by = :by',
+            ExpressionAttributeValues={
+                ':by': performed_by
+            }
+        )
+        
+        logger.info(f"Set block performed by {performed_by} for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error setting block performed by for {user_id}: {str(e)}")
+        # Don't raise exception as this is not critical for the main operation
 
 def set_administrative_protection(user_id: str, performed_by: str) -> None:
     """

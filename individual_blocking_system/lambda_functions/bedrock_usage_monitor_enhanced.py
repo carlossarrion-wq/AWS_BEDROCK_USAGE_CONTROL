@@ -514,7 +514,8 @@ def block_user(user_id: str, usage_record: Dict[str, Any]) -> None:
                 'action': 'block',
                 'user_id': user_id,
                 'reason': 'daily_limit_exceeded',
-                'usage_record': usage_record
+                'usage_record': usage_record,
+                'performed_by': 'system'  # Explicitly set system as performer for automatic blocks
             }, cls=DecimalEncoder)
         )
         

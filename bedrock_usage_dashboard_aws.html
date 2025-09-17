@@ -1529,7 +1529,7 @@
             // Get blocking status for all users first
             await updateUserBlockingStatus();
             
-            sortedUsers.forEach((username) => {
+            for (const username of sortedUsers) {
                 const personTag = getUserPersonTag(username) || "Unknown";
                 
                 let userTeam = "Unknown";
@@ -1574,7 +1574,39 @@
                 
                 // Check if user is blocked (get real status from Lambda)
                 if (userBlockingStatus && userBlockingStatus[username]) {
-                    statusBadge = `<span class="status-badge blocked" style="cursor: pointer;" onclick="navigateToBlockingTab()">Blocked</span>`;
+                    // Determine if it's an admin block by checking the reason or performed_by
+                    let isAdminBlock = false;
+                    try {
+                        // Check DynamoDB for additional context about the block
+                        const dynamodb = new AWS.DynamoDB.DocumentClient();
+                        const today = new Date().toISOString().split('T')[0];
+                        
+                        const dbParams = {
+                            TableName: 'bedrock_user_daily_usage',
+                            Key: {
+                                'user_id': username,
+                                'date': today
+                            }
+                        };
+                        
+                        const dbResult = await dynamodb.get(dbParams).promise();
+                        if (dbResult.Item) {
+                            const adminProtectionBy = dbResult.Item.admin_protection_by;
+                            
+                            // Check if it's an admin block: admin_protection_by exists and is not 'system'
+                            isAdminBlock = adminProtectionBy && adminProtectionBy !== 'system';
+                        }
+                    } catch (error) {
+                        console.error(`Error checking admin block status for ${username}:`, error);
+                        // Fallback: assume regular block if we can't determine
+                        isAdminBlock = false;
+                    }
+                    
+                    if (isAdminBlock) {
+                        statusBadge = `<span class="status-badge blocked" style="cursor: pointer;" onclick="navigateToBlockingTab()">Blocked Admin</span>`;
+                    } else {
+                        statusBadge = `<span class="status-badge blocked" style="cursor: pointer;" onclick="navigateToBlockingTab()">Blocked</span>`;
+                    }
                 } else if (userAdminProtection && userAdminProtection[username]) {
                     statusBadge = `<span class="status-badge active-admin" style="cursor: pointer;" onclick="navigateToBlockingTab()">Active Admin</span>`;
                 }
@@ -1603,7 +1635,7 @@
                         </td>
                     </tr>
                 `;
-            });
+            }
             
             updateUserAlerts();
         }
@@ -2576,7 +2608,39 @@
                 let rowClass = '';
                 
                 if (isBlocked) {
-                    statusBadge = `<span class="status-badge blocked">Blocked</span>`;
+                    // Determine if it's an admin block by checking the reason or performed_by
+                    let isAdminBlock = false;
+                    try {
+                        // Check DynamoDB for additional context about the block
+                        const dynamodb = new AWS.DynamoDB.DocumentClient();
+                        const today = new Date().toISOString().split('T')[0];
+                        
+                        const dbParams = {
+                            TableName: 'bedrock_user_daily_usage',
+                            Key: {
+                                'user_id': username,
+                                'date': today
+                            }
+                        };
+                        
+                        const dbResult = await dynamodb.get(dbParams).promise();
+                        if (dbResult.Item) {
+                            const adminProtectionBy = dbResult.Item.admin_protection_by;
+                            
+                            // Check if it's an admin block: admin_protection_by exists and is not 'system'
+                            isAdminBlock = adminProtectionBy && adminProtectionBy !== 'system';
+                        }
+                    } catch (error) {
+                        console.error(`Error checking admin block status for ${username}:`, error);
+                        // Fallback: assume admin block if blockType is Manual
+                        isAdminBlock = (blockType === 'Manual');
+                    }
+                    
+                    if (isAdminBlock) {
+                        statusBadge = `<span class="status-badge blocked">Blocked Admin</span>`;
+                    } else {
+                        statusBadge = `<span class="status-badge blocked">Blocked</span>`;
+                    }
                     rowClass = 'blocked-user';
                 } else if (hasAdminProtection) {
                     statusBadge = `<span class="status-badge active-admin">Active Admin</span>`;
