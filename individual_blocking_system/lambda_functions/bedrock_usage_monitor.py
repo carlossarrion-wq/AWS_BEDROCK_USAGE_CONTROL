@@ -101,6 +101,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Update usage counter with auto-provisioning
         usage_record = update_daily_usage(user_info)
         
+        # Publish metrics to CloudWatch for real-time dashboard updates
+        publish_cloudwatch_metrics(user_info['user_id'], usage_record)
+        
         # Evaluate limits and take action
         action_taken = evaluate_limits_and_act(user_info['user_id'], usage_record)
         
@@ -675,6 +678,82 @@ def check_and_handle_expired_block(user_id: str, usage_record: Dict[str, Any]) -
     except Exception as e:
         logger.error(f"Error checking block expiration for user {user_id}: {str(e)}")
         return False
+
+def publish_cloudwatch_metrics(user_id: str, usage_record: Dict[str, Any]) -> None:
+    """
+    Publish real-time metrics to CloudWatch for dashboard consumption
+    
+    Args:
+        user_id: The user ID
+        usage_record: Current usage record from DynamoDB
+    """
+    try:
+        current_count = int(usage_record['request_count']) if isinstance(usage_record['request_count'], Decimal) else usage_record['request_count']
+        team = usage_record.get('team', 'unknown')
+        
+        # Get current timestamp
+        timestamp = datetime.utcnow()
+        
+        # Prepare metric data for individual user
+        metric_data = [
+            {
+                'MetricName': 'BedrockUsage',
+                'Dimensions': [
+                    {
+                        'Name': 'User',
+                        'Value': user_id
+                    }
+                ],
+                'Value': 1,  # Each call represents 1 request
+                'Unit': 'Count',
+                'Timestamp': timestamp
+            }
+        ]
+        
+        # Add team-level metric if team is known
+        if team != 'unknown':
+            metric_data.append({
+                'MetricName': 'BedrockUsage',
+                'Dimensions': [
+                    {
+                        'Name': 'Team',
+                        'Value': team
+                    }
+                ],
+                'Value': 1,  # Each call represents 1 request
+                'Unit': 'Count',
+                'Timestamp': timestamp
+            })
+            
+            # Add combined user+team metric for detailed analysis
+            metric_data.append({
+                'MetricName': 'BedrockUsage',
+                'Dimensions': [
+                    {
+                        'Name': 'User',
+                        'Value': user_id
+                    },
+                    {
+                        'Name': 'Team',
+                        'Value': team
+                    }
+                ],
+                'Value': 1,  # Each call represents 1 request
+                'Unit': 'Count',
+                'Timestamp': timestamp
+            })
+        
+        # Publish metrics to CloudWatch
+        cloudwatch.put_metric_data(
+            Namespace='UserMetrics',
+            MetricData=metric_data
+        )
+        
+        logger.info(f"Published CloudWatch metrics for {user_id} (team: {team}, current usage: {current_count})")
+        
+    except Exception as e:
+        logger.error(f"Error publishing CloudWatch metrics for {user_id}: {str(e)}")
+        # Don't raise the exception - metrics publishing failure shouldn't break the main flow
 
 def send_notification(user_id: str, notification_type: str, usage_record: Dict[str, Any]) -> None:
     """

@@ -28,7 +28,7 @@ from botocore.exceptions import ClientError
 REGION = 'eu-west-1'
 USER_LOG_GROUP = '/aws/bedrock/user_usage'
 TEAM_LOG_GROUP = '/aws/bedrock/team_usage'
-QUOTA_CONFIG_FILE = 'quota_config.json'
+QUOTA_CONFIG_FILE = 'individual_blocking_system/lambda_functions/quota_config.json'
 DEFAULT_TOOL = 'Cline Agent'
 
 # Team naming pattern
@@ -197,6 +197,23 @@ def create_user(username, group_name=None):
                     GroupName=group_name
                 )
                 print(f"User {username} added to group {group_name}")
+                
+                # Add Team tag to the user (CRITICAL for Lambda function team assignment)
+                try:
+                    iam_client.tag_user(
+                        UserName=username,
+                        Tags=[
+                            {
+                                'Key': 'Team',
+                                'Value': group_name
+                            }
+                        ]
+                    )
+                    print(f"Added Team tag with value '{group_name}' to user {username}")
+                except ClientError as tag_error:
+                    print(f"Warning: Could not add Team tag to user: {str(tag_error)}")
+                    print("This may cause issues with team assignment in the Lambda function!")
+                
                 return [group_name]
             except ClientError as e:
                 print(f"Error adding user to group: {str(e)}")
@@ -254,12 +271,12 @@ def check_user_in_quota_config(username, team_group, quota_config):
         print(f"Warning: User {username} not found in quota configuration.")
         print(f"Adding user {username} to quota configuration with default values.")
         
-        # Add user with default values
+        # Add user with default values (250 daily, 5000 monthly)
         users[username] = {
             "monthly_limit": 5000,  # 5,000 per user per month
             "daily_limit": 250,     # 250 per user per day
-            "warning_threshold": 60,
-            "critical_threshold": 85,
+            "warning_threshold": 150,  # 60% of 250 = 150
+            "critical_threshold": 200,  # 80% of 250 = 200
             "team": team_group
         }
     elif 'team' not in users[username]:
@@ -300,6 +317,11 @@ def check_user_in_quota_config(username, team_group, quota_config):
 def create_bedrock_policy_for_user(username):
     """Create and attach Bedrock policy for the user."""
     policy_name = f"{username}_BedrockPolicy"
+    
+    # Extract team name from username for role assumption
+    # Assume username format like "mulesoft_003" -> team "mulesoft"
+    team_name = username.split('_')[0] if '_' in username else username
+    
     policy_document = {
         "Version": "2012-10-17",
         "Statement": [
@@ -307,21 +329,100 @@ def create_bedrock_policy_for_user(username):
                 "Effect": "Allow",
                 "Action": [
                     "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream",
+                    "bedrock:CallWithBearerToken",
+                    "bedrock:ListFoundationModels",
+                    "bedrock:GetFoundationModel",
+                    "bedrock:ListCustomModels",
+                    "bedrock:GetCustomModel",
+                    "bedrock:ListModelCustomizationJobs",
+                    "bedrock:GetModelCustomizationJob",
+                    "bedrock:ListPrompts",
+                    "bedrock:GetPrompt",
+                    "bedrock:ListTagsForResource",
+                    "bedrock:ListGuardrails",
+                    "bedrock:GetGuardrail",
+                    "bedrock:ApplyGuardrail",
+                    "bedrock:ListEvaluations",
+                    "bedrock:GetEvaluation"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": "bedrock:InvokeModelWithResponseStream",
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock:InvokeModel",
                     "bedrock:InvokeModelWithResponseStream"
                 ],
                 "Resource": [
-                    "arn:aws:bedrock:eu-west-1:701055077130:inference-profile/eu.anthropic.claude-*",
-                    "arn:aws:bedrock:eu-west-1:701055077130:inference-profile/eu.amazon.nova-*"
+                    "arn:aws:bedrock:*:*:foundation-model/*",
+                    "arn:aws:bedrock:*:*:inference-profile/*",
+                    "arn:aws:bedrock:eu-west-1:*:inference-profile/eu.anthropic.claude-sonnet-4-20250514-v1:0",
+                    "arn:aws:bedrock:eu-central-1:*:foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
+                    "arn:aws:bedrock:eu-west-1:*:inference-profile/eu.amazon.nova-pro-v1:0",
+                    "arn:aws:bedrock:eu-west-1:*:inference-profile/eu.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                    "arn:aws:bedrock:eu-west-1:701055077130:inference-profile/eu.anthropic.claude-3-7-sonnet-20250219-v1:0"
                 ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock:GetInferenceProfile",
+                    "bedrock:ListInferenceProfiles"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": "sts:AssumeRole",
+                "Resource": f"arn:aws:iam::701055077130:role/team_{team_name}_BedrockRole"
             }
         ]
     }
     
     try:
+        policy_arn = f"arn:aws:iam::701055077130:policy/{policy_name}"
+        
         # Check if policy already exists
         try:
-            iam_client.get_policy(PolicyArn=f"arn:aws:iam::701055077130:policy/{policy_name}")
-            print(f"Policy {policy_name} already exists.")
+            existing_policy = iam_client.get_policy(PolicyArn=policy_arn)
+            print(f"Policy {policy_name} already exists. Updating with new version...")
+            
+            # Create a new version of the existing policy
+            try:
+                response = iam_client.create_policy_version(
+                    PolicyArn=policy_arn,
+                    PolicyDocument=json.dumps(policy_document),
+                    SetAsDefault=True
+                )
+                print(f"Policy {policy_name} updated to version {response['PolicyVersion']['VersionId']}.")
+                
+                # Clean up old versions (keep only the latest 5 as AWS allows max 5 versions)
+                versions_response = iam_client.list_policy_versions(PolicyArn=policy_arn)
+                versions = versions_response['Versions']
+                non_default_versions = [v for v in versions if not v['IsDefaultVersion']]
+                
+                if len(non_default_versions) > 4:  # Keep 4 non-default + 1 default = 5 total
+                    versions_to_delete = sorted(non_default_versions, key=lambda x: x['CreateDate'])[:-4]
+                    for version in versions_to_delete:
+                        try:
+                            iam_client.delete_policy_version(
+                                PolicyArn=policy_arn,
+                                VersionId=version['VersionId']
+                            )
+                            print(f"Deleted old policy version: {version['VersionId']}")
+                        except ClientError as e:
+                            print(f"Warning: Could not delete version {version['VersionId']}: {str(e)}")
+                            
+            except ClientError as e:
+                print(f"Error updating policy version: {str(e)}")
+                return False
+                
         except ClientError as e:
             if e.response['Error']['Code'] == 'NoSuchEntity':
                 # Create the policy
@@ -335,13 +436,21 @@ def create_bedrock_policy_for_user(username):
                 print(f"Error checking policy: {str(e)}")
                 return False
         
-        # Attach policy to user
+        # Attach policy to user (this is idempotent, so safe to call even if already attached)
         print(f"Attaching policy {policy_name} to user {username}...")
-        iam_client.attach_user_policy(
-            UserName=username,
-            PolicyArn=f"arn:aws:iam::701055077130:policy/{policy_name}"
-        )
-        print(f"Policy {policy_name} attached to user {username}.")
+        try:
+            iam_client.attach_user_policy(
+                UserName=username,
+                PolicyArn=policy_arn
+            )
+            print(f"Policy {policy_name} attached to user {username}.")
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'EntityAlreadyExists':
+                print(f"Policy {policy_name} is already attached to user {username}.")
+            else:
+                print(f"Error attaching policy: {str(e)}")
+                return False
+        
         return True
     except ClientError as e:
         print(f"Error creating/attaching Bedrock policy for user {username}: {str(e)}")
@@ -678,6 +787,39 @@ def main():
                     return 1
         else:
             return 1
+    
+    # Step 2.5: Ensure user has correct Team tag (CRITICAL for Lambda function)
+    print(f"\nStep 2.5: Ensuring user {username} has correct Team tag...")
+    try:
+        # Check current tags
+        response = iam_client.list_user_tags(UserName=username)
+        current_tags = {tag['Key']: tag['Value'] for tag in response['Tags']}
+        current_team_tag = current_tags.get('Team')
+        
+        if current_team_tag != team_group:
+            if current_team_tag:
+                print(f"User {username} has incorrect Team tag: '{current_team_tag}' (should be '{team_group}')")
+                print(f"Updating Team tag to '{team_group}'...")
+            else:
+                print(f"User {username} is missing Team tag. Adding Team tag: '{team_group}'...")
+            
+            # Add or update the Team tag
+            iam_client.tag_user(
+                UserName=username,
+                Tags=[
+                    {
+                        'Key': 'Team',
+                        'Value': team_group
+                    }
+                ]
+            )
+            print(f"✅ Team tag updated successfully for user {username}")
+        else:
+            print(f"✅ User {username} already has correct Team tag: '{team_group}'")
+            
+    except ClientError as e:
+        print(f"Warning: Could not check/update Team tag for user {username}: {str(e)}")
+        print("This may cause issues with team assignment in the Lambda function!")
     
     # Step 3: Check user in quota config
     print("\nStep 3: Checking user in quota configuration...")

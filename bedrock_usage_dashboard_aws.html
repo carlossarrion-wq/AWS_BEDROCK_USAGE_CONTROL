@@ -1018,17 +1018,39 @@
         // Load quota configuration
         async function loadQuotaConfig() {
             try {
-                // Load configuration from quota_config.json file with cache busting
+                // Try to load configuration from Lambda function directory first
                 const cacheBuster = new Date().getTime();
-                const response = await fetch(`quota_config.json?v=${cacheBuster}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const config = await response.json();
+                let response;
+                let config;
                 
-                console.log('Loaded quota configuration from quota_config.json:', config);
-                quotaConfig = config;
-                return config;
+                // First try: Lambda function directory
+                try {
+                    response = await fetch(`individual_blocking_system/lambda_functions/quota_config.json?v=${cacheBuster}`);
+                    if (response.ok) {
+                        config = await response.json();
+                        console.log('Loaded quota configuration from Lambda directory:', config);
+                        quotaConfig = config;
+                        return config;
+                    }
+                } catch (lambdaError) {
+                    console.log('Lambda directory quota_config.json not accessible, trying root directory...');
+                }
+                
+                // Second try: Root directory (fallback)
+                try {
+                    response = await fetch(`quota_config.json?v=${cacheBuster}`);
+                    if (response.ok) {
+                        config = await response.json();
+                        console.log('Loaded quota configuration from root directory:', config);
+                        quotaConfig = config;
+                        return config;
+                    }
+                } catch (rootError) {
+                    console.log('Root directory quota_config.json not accessible either');
+                }
+                
+                throw new Error('quota_config.json not found in Lambda directory or root directory');
+                
             } catch (error) {
                 console.error('Error loading quota configuration from file, using fallback:', error);
                 
