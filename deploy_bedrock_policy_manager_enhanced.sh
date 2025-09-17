@@ -83,7 +83,7 @@ if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" >
         --timeout 300 \
         --memory-size 512 \
         --region "$REGION" \
-        --environment 'Variables={"DYNAMODB_TABLE":"bedrock_user_daily_usage","SNS_TOPIC_ARN":"arn:aws:sns:eu-west-1:701055077130:bedrock-usage-alerts","ACCOUNT_ID":"701055077130","EMAIL_NOTIFICATIONS_ENABLED":"true"}' \
+        --environment Variables='{DYNAMODB_TABLE=bedrock_user_daily_usage,SNS_TOPIC_ARN=arn:aws:sns:eu-west-1:701055077130:bedrock-usage-alerts,ACCOUNT_ID=701055077130,EMAIL_NOTIFICATIONS_ENABLED=true}' \
         --description "Enhanced Bedrock Policy Manager with Email Service Integration - $(date '+%Y-%m-%d %H:%M:%S')"
     
     echo -e "${GREEN}✓ Function configuration updated with email service settings${NC}"

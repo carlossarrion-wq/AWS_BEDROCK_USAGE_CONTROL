@@ -664,7 +664,7 @@ Fecha y hora: {self._get_madrid_time()}
         reason_text = {
             'daily_reset': 'Tu período de bloqueo ha expirado',
             'manual_admin_unblock': 'Un administrador ha restaurado tu acceso manualmente',
-            'automatic_expiration': 'Tu período de bloqueo de 24 horas ha expirado'
+            'automatic_expiration': 'Tu período de bloqueo ha expirado'
         }.get(reason, 'Tu acceso ha sido restaurado')
         
         return f"""
@@ -723,7 +723,7 @@ Fecha y hora: {self._get_madrid_time()}
         reason_text = {
             'daily_reset': 'Tu período de bloqueo ha expirado',
             'manual_admin_unblock': 'Un administrador ha restaurado tu acceso manualmente',
-            'automatic_expiration': 'Tu período de bloqueo de 24 horas ha expirado'
+            'automatic_expiration': 'Tu período de bloqueo ha expirado'
         }.get(reason, 'Tu acceso ha sido restaurado')
         
         return f"""

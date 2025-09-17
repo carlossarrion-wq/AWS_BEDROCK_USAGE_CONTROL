@@ -160,9 +160,38 @@ def block_user_access(user_id: str, reason: str, usage_record: Dict[str, Any], e
             PolicyDocument=json.dumps(updated_policy, separators=(',', ':'))
         )
         
-        # Calculate expiration date (24 hours from now)
-        from datetime import datetime, timedelta
-        expires_at = (datetime.utcnow() + timedelta(days=1)).isoformat() + 'Z'
+        # Calculate expiration date based on block type
+        from datetime import datetime, timedelta, timezone
+        
+        performed_by = event.get('performed_by', 'system')
+        
+        if performed_by != 'system':
+            # Administrative block: today + 24 hours
+            expires_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat().replace('+00:00', 'Z')
+        else:
+            # Automatic block: tomorrow at 00:00 CET
+            # CET is UTC+1, CEST is UTC+2 (during daylight saving time)
+            cet_offset = timezone(timedelta(hours=1))  # CET (winter time)
+            cest_offset = timezone(timedelta(hours=2))  # CEST (summer time)
+            
+            # Get current UTC time
+            now_utc = datetime.now(timezone.utc)
+            
+            # Convert to CET/CEST (approximate - for exact DST rules we'd need more complex logic)
+            # For simplicity, assume CEST from March to October
+            current_month = now_utc.month
+            is_dst = 3 <= current_month <= 10  # Rough DST period
+            madrid_tz = cest_offset if is_dst else cet_offset
+            
+            # Get current time in Madrid timezone
+            now_madrid = now_utc.astimezone(madrid_tz)
+            
+            # Calculate tomorrow at 00:00 in Madrid timezone
+            tomorrow_madrid = now_madrid.date() + timedelta(days=1)
+            tomorrow_midnight_madrid = datetime.combine(tomorrow_madrid, datetime.min.time()).replace(tzinfo=madrid_tz)
+            
+            # Convert to UTC for storage
+            expires_at = tomorrow_midnight_madrid.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
         
         # Update DynamoDB record
         update_user_block_status(user_id, 'BLOCKED', reason, expires_at)
@@ -265,10 +294,16 @@ def unblock_user_access(user_id: str, reason: str, event: Dict[str, Any]) -> Dic
         # Update DynamoDB record
         update_user_block_status(user_id, 'ACTIVE', reason)
         
-        # NEW: Set administrative protection if unblocked by admin (not system)
+        # NEW: Handle administrative protection based on who performed the unblock
         performed_by = event.get('performed_by', 'system')
+        reason = event.get('reason', 'unspecified')
+        
         if performed_by != 'system' and performed_by != 'daily_reset':
+            # Manual admin unblock - set administrative protection
             set_administrative_protection(user_id, performed_by)
+        elif reason == 'automatic_expiration':
+            # Automatic expiration unblock - clear administrative protection
+            clear_administrative_protection(user_id)
         
         # Send notification (including enhanced email for admin unblocks)
         send_unblock_notification(user_id, reason, performed_by)
@@ -693,6 +728,34 @@ def set_administrative_protection(user_id: str, performed_by: str) -> None:
         
     except Exception as e:
         logger.error(f"Error setting administrative protection for {user_id}: {str(e)}")
+        # Don't raise exception as this is not critical for the main operation
+
+def clear_administrative_protection(user_id: str) -> None:
+    """
+    Clear administrative protection flag for user when unblocked by automatic expiration
+    This ensures the user returns to normal ACTIVE state instead of ACTIVE ADMIN
+    
+    Args:
+        user_id: The user ID to clear protection from
+    """
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        today = date.today().isoformat()
+        
+        # Clear admin_protection flag in DynamoDB
+        table.update_item(
+            Key={'user_id': user_id, 'date': today},
+            UpdateExpression='SET admin_protection = :protection, admin_protection_cleared_at = :at',
+            ExpressionAttributeValues={
+                ':protection': False,
+                ':at': datetime.utcnow().isoformat()
+            }
+        )
+        
+        logger.info(f"Cleared administrative protection for {user_id} due to automatic expiration")
+        
+    except Exception as e:
+        logger.error(f"Error clearing administrative protection for {user_id}: {str(e)}")
         # Don't raise exception as this is not critical for the main operation
 
 def log_operation_to_history(user_id: str, operation: str, reason: str, performed_by: str, status: str) -> None:
