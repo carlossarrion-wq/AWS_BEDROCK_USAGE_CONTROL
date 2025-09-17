@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Bedrock Usage Dashboard</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aws-sdk@2.1048.0/dist/aws-sdk.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.1/moment.min.js"></script>
+    
+    <!-- Dashboard Styles -->
+    <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+    <!-- Connection Status Indicator -->
+    <div id="connection-status" class="connection-status disconnected">
+        🔴 Disconnected from AWS
+    </div>
+
+    <div class="header">
+        <h1>AWS Bedrock Usage Dashboard</h1>
+        <p>Real-time monitoring and management of Bedrock usage</p>
+        <button onclick="logout()" style="position: absolute; right: 20px; top: 20px; padding: 8px 16px; background-color: #e67e22; color: white; border: none; border-radius: 4px; cursor: pointer;">Logout</button>
+    </div>
+
+    <div class="container">
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('user-tab')">User Consumption</button>
+                <button class="tab-button" onclick="showTab('team-tab')">Team Consumption</button>
+                <button class="tab-button" onclick="showTab('consumption-details-tab')">Consumption Details</button>
+                <button class="tab-button" onclick="showTab('cost-analysis-tab')">Cost Analysis</button>
+                <button class="tab-button" onclick="showTab('blocking-management-tab')">Blocking Management</button>
+            </div>
+            
+            <!-- User Consumption Tab -->
+            <div id="user-tab" class="tab-content active">
+                <div class="section-header">
+                    <h2>User Consumption</h2>
+                    <button class="refresh-button" onclick="loadDashboardData()" title="Refresh Data">
+                        <span class="refresh-icon">&#x21bb;</span>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="dashboard">
+                    <div class="card">
+                        <h2>User Usage Alerts</h2>
+                        <div id="user-alerts-container">
+                            <div class="alert info">
+                                <div class="loading-spinner"></div>
+                                <strong>Connecting:</strong> Establishing connection to AWS...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>User Monthly Usage</h2>
+                        <div class="chart-container">
+                            <canvas id="user-monthly-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>User Usage Details</h2>
+                    <button class="export-button" onclick="exportUserUsageTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <table id="user-usage-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Person</th>
+                                <th>Team</th>
+                                <th>Blocking Status</th>
+                                <th>Daily Requests</th>
+                                <th>Daily Limit</th>
+                                <th>Daily Usage</th>
+                                <th>Monthly Requests</th>
+                                <th>Monthly Limit</th>
+                                <th>Monthly Usage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="10">
+                                    <div class="loading-spinner"></div>
+                                    Connecting to AWS and loading data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card">
+                        <h2>User Daily Usage</h2>
+                        <div class="chart-container">
+                            <canvas id="user-daily-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Access Method Distribution Today</h2>
+                        <div class="chart-container">
+                            <canvas id="access-method-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Team Consumption Tab -->
+            <div id="team-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>Team Consumption</h2>
+                    <button class="refresh-button" onclick="loadDashboardData()" title="Refresh Data">
+                        <span class="refresh-icon">&#x21bb;</span>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="dashboard">
+                    <div class="card">
+                        <h2>Team Usage Alerts</h2>
+                        <div id="team-alerts-container">
+                            <div class="alert info">
+                                <div class="loading-spinner"></div>
+                                <strong>Loading:</strong> Fetching team data from AWS CloudWatch...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Team Monthly Usage</h2>
+                        <div class="chart-container">
+                            <canvas id="team-monthly-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card" style="position: relative;">
+                        <h2>Team Usage Details</h2>
+                        <button class="export-button" onclick="exportTeamUsageTable()" title="Export to CSV">
+                            <img src="export.png" alt="Export" class="export-icon">
+                        </button>
+                        <table id="team-usage-table">
+                            <thead>
+                                <tr>
+                                    <th>Team</th>
+                                    <th>Daily Requests</th>
+                                    <th>Daily Usage</th>
+                                    <th>Monthly Requests</th>
+                                    <th>Monthly Limit</th>
+                                    <th>Monthly Usage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="6">
+                                        <div class="loading-spinner"></div>
+                                        Loading team data...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="card" style="position: relative;">
+                        <h2>Users in Team</h2>
+                        <button class="export-button" onclick="exportTeamUsersTable()" title="Export to CSV">
+                            <img src="export.png" alt="Export" class="export-icon">
+                        </button>
+                        <table id="team-users-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Person</th>
+                                    <th>Team</th>
+                                    <th>Monthly Requests</th>
+                                    <th>% of Team Usage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="5">
+                                        <div class="loading-spinner"></div>
+                                        Loading team users...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card">
+                        <h2>Team Daily Usage</h2>
+                        <div class="chart-container">
+                            <canvas id="team-daily-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Model Usage Distribution Today</h2>
+                        <div class="chart-container">
+                            <canvas id="model-distribution-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Consumption Details Tab -->
+            <div id="consumption-details-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>Consumption Details</h2>
+                    <button class="refresh-button" onclick="loadDashboardData()" title="Refresh Data">
+                        <span class="refresh-icon">&#x21bb;</span>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>User Consumption - Last 10 Days</h2>
+                    <button class="export-button" onclick="exportConsumptionDetailsTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <table id="consumption-details-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Person</th>
+                                <th>Team</th>
+                                <th id="day-9">Day -9</th>
+                                <th id="day-8">Day -8</th>
+                                <th id="day-7">Day -7</th>
+                                <th id="day-6">Day -6</th>
+                                <th id="day-5">Day -5</th>
+                                <th id="day-4">Day -4</th>
+                                <th id="day-3">Day -3</th>
+                                <th id="day-2">Day -2</th>
+                                <th id="day-1">Day -1</th>
+                                <th id="day-0">Today</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="13">
+                                    <div class="loading-spinner"></div>
+                                    Loading consumption details...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="card" style="margin-top: 20px;">
+                    <h2>Daily Usage Trend - Last 10 Days</h2>
+                    <div class="chart-container">
+                        <canvas id="consumption-details-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Model Usage by Team</h2>
+                    <button class="export-button" onclick="exportModelUsageTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <table id="model-usage-table">
+                        <thead>
+                            <tr>
+                                <th>Team</th>
+                                <th>Claude 3 Opus</th>
+                                <th>Claude 3 Sonnet</th>
+                                <th>Claude 3 Haiku</th>
+                                <th>Claude 3.7 Sonnet</th>
+                                <th>Claude 4</th>
+                                <th>Amazon Titan</th>
+                                <th>Total Requests</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8">
+                                    <div class="loading-spinner"></div>
+                                    Loading model usage data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Cost Analysis Tab -->
+            <div id="cost-analysis-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>Cost Analysis</h2>
+                    <button class="refresh-button" onclick="loadCostAnalysisData()" title="Refresh Data">
+                        <span class="refresh-icon">&#x21bb;</span>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="card" style="margin-top: 20px;">
+                    <h2>Cost Analysis Alerts</h2>
+                    <div id="cost-alerts-container">
+                        <div class="alert info">
+                            <div class="loading-spinner"></div>
+                            <strong>Loading:</strong> Fetching cost data from AWS Cost Explorer...
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Bedrock Service Costs - Last 10 Days</h2>
+                    <button class="export-button" onclick="exportCostAnalysisTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <table id="cost-analysis-table">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th id="cost-day-9">Day -9</th>
+                                <th id="cost-day-8">Day -8</th>
+                                <th id="cost-day-7">Day -7</th>
+                                <th id="cost-day-6">Day -6</th>
+                                <th id="cost-day-5">Day -5</th>
+                                <th id="cost-day-4">Day -4</th>
+                                <th id="cost-day-3">Day -3</th>
+                                <th id="cost-day-2">Day -2</th>
+                                <th id="cost-day-1">Day -1</th>
+                                <th id="cost-day-0">Today</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="12">
+                                    <div class="loading-spinner"></div>
+                                    Loading cost analysis data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Daily Cost vs Requests Analysis - Last 10 Days</h2>
+                    <button class="export-button" onclick="exportCostVsRequestsTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <table id="cost-vs-requests-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Total Cost (USD)</th>
+                                <th>Total Requests</th>
+                                <th>Cost per Request (USD)</th>
+                                <th>Efficiency Rating</th>
+                                <th>Cost Trend</th>
+                                <th>Request Trend</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="7">
+                                    <div class="loading-spinner"></div>
+                                    Loading cost vs requests analysis...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card">
+                        <h2>Daily Cost Trend - Last 10 Days</h2>
+                        <div class="chart-container">
+                            <canvas id="cost-trend-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Service Cost Distribution</h2>
+                        <div class="chart-container">
+                            <canvas id="service-cost-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card">
+                        <h2>Cost per Request Trend</h2>
+                        <div class="chart-container">
+                            <canvas id="cost-per-request-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Cost vs Requests Correlation</h2>
+                        <div class="chart-container">
+                            <canvas id="cost-requests-correlation-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Blocking Management Tab -->
+            <div id="blocking-management-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>User Blocking Management</h2>
+                    <button class="refresh-button" onclick="loadBlockingData()" title="Refresh Data">
+                        <span class="refresh-icon">&#x21bb;</span>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="card" style="position: relative;">
+                    <h2>Current User Status & Manual Blocking</h2>
+                    <button class="export-button" onclick="exportUserBlockingStatusTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <div class="admin-controls">
+                        <div class="blocking-controls">
+                            <h3>Manual Block User</h3>
+                            <div class="block-form">
+                                <select id="user-select" class="form-control">
+                                    <option value="">Select User to Block...</option>
+                                </select>
+                                <select id="block-duration" class="form-control" onchange="handleDurationChange()">
+                                    <option value="1day">1 Day</option>
+                                    <option value="30days">30 Days</option>
+                                    <option value="90days">90 Days</option>
+                                    <option value="custom">Custom</option>
+                                    <option value="indefinite">Indefinite</option>
+                                </select>
+                                <input type="datetime-local" id="custom-datetime" class="form-control" style="display: none;">
+                                <input type="text" id="block-reason" class="form-control" placeholder="Reason for blocking/unblocking...">
+                                <button id="dynamic-action-btn" onclick="performDynamicAction()" class="btn btn-select-user" disabled>
+                                    Select user
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <table id="user-blocking-status-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Person</th>
+                                <th>Team</th>
+                                <th>Status</th>
+                                <th>Daily Usage</th>
+                                <th>Daily Limit</th>
+                                <th>Daily Usage</th>
+                                <th>Block Type</th>
+                                <th>Blocked Since</th>
+                                <th>Expires</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="9">
+                                    <div class="loading-spinner"></div>
+                                    Loading blocking status...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="card" style="position: relative; margin-top: 20px;">
+                    <h2>Recent Blocking Operations</h2>
+                    <button class="export-button" onclick="exportBlockingOperationsTable()" title="Export to CSV">
+                        <img src="export.png" alt="Export" class="export-icon">
+                    </button>
+                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div class="pagination-info">
+                            <span id="operations-info">Showing 0-0 of 0 operations</span>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button id="prev-operations-btn" class="btn" style="margin-right: 5px;" onclick="loadPreviousOperations()" disabled>
+                                ←
+                            </button>
+                            <span id="operations-page-info">Page 1</span>
+                            <button id="next-operations-btn" class="btn" style="margin-left: 5px;" onclick="loadNextOperations()" disabled>
+                                →
+                            </button>
+                        </div>
+                    </div>
+                    <table id="blocking-operations-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User</th>
+                                <th>Person</th>
+                                <th>Operation</th>
+                                <th>Reason</th>
+                                <th>Performed By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="6">
+                                    <div class="loading-spinner"></div>
+                                    Loading operations history...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard JavaScript Modules -->
+    <script src="js/config.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/blocking.js"></script>
+    <script src="js/cost-analysis.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
