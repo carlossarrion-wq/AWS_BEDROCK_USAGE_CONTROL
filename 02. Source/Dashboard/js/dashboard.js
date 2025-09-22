@@ -368,6 +368,21 @@ async function loadDashboardData() {
         userTags = userData.userTags;
         userPersonMap = userData.userPersonMap || {}; // Extract person mapping from MySQL
         
+        // CRITICAL FIX: Update ALL_TEAMS with dynamic teams from database
+        if (userData.dynamicTeams && userData.dynamicTeams.length > 0) {
+            console.log('🎯 CRITICAL FIX: Updating ALL_TEAMS with dynamic teams from database');
+            console.log('📊 Old ALL_TEAMS (hardcoded):', ALL_TEAMS);
+            console.log('📊 New dynamicTeams (from database):', userData.dynamicTeams);
+            
+            // Replace the global ALL_TEAMS with dynamic teams from database
+            window.ALL_TEAMS = userData.dynamicTeams;
+            
+            console.log('✅ ALL_TEAMS updated successfully with dynamic teams');
+            console.log('🎯 Updated ALL_TEAMS:', window.ALL_TEAMS);
+        } else {
+            console.warn('⚠️ No dynamic teams found, keeping original ALL_TEAMS');
+        }
+        
         // Get user metrics from MySQL service with forced refresh
         userMetrics = await window.mysqlDataService.getUserMetrics(true);
         
@@ -503,8 +518,10 @@ function loadUserMonthlyData() {
     const labels = [];
     const data = [];
     
-    // Sort teams alphabetically
-    const sortedTeams = [...ALL_TEAMS].sort();
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    const sortedTeams = [...dynamicTeams].sort();
+    console.log('🎯 Using dynamic teams for user monthly data:', sortedTeams);
     
     // For each team, get users and sort by usage (highest to lowest)
     sortedTeams.forEach(team => {
@@ -1150,10 +1167,12 @@ function loadTeamMonthlyData() {
     const labels = [];
     const data = [];
     
-    // Sort teams in reverse alphabetical order to fix the "opposite direction" issue
-    const sortedTeams = [...ALL_TEAMS].sort().reverse();
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    const sortedTeams = [...dynamicTeams].sort().reverse();
     
     console.log('🏢 Loading team monthly data from MySQL-aggregated metrics...');
+    console.log('🎯 Using dynamic teams for monthly chart:', sortedTeams);
     
     sortedTeams.forEach((team, index) => {
         const teamMonthlyTotal = teamMetrics[team]?.monthly || 0;
@@ -1198,7 +1217,11 @@ function loadTeamDailyData() {
     console.log('📅 Loading team daily data from MySQL-aggregated metrics...');
     console.log('📅 Chart labels (10 days):', teamDateLabels);
     
-    ALL_TEAMS.forEach((team, index) => {
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    console.log('🎯 Using dynamic teams for daily chart:', dynamicTeams);
+    
+    dynamicTeams.forEach((team, index) => {
         // Get the daily data from MySQL (11 elements: indices 0-10, where 0=day-10, 10=today)
         // Chart now shows 10 elements for the last 10 days (day-9 through today) - matching User Daily
         // 
@@ -1244,9 +1267,12 @@ function loadTeamUsageDetails() {
     const tableBody = document.querySelector('#team-usage-table tbody');
     tableBody.innerHTML = '';
     
-    const sortedTeams = [...ALL_TEAMS].sort();
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    const sortedTeams = [...dynamicTeams].sort();
     
-    console.log('📋 Loading team usage details from DynamoDB-aggregated metrics...');
+    console.log('📋 Loading team usage details from MySQL-aggregated metrics...');
+    console.log('🎯 Using dynamic teams for usage details:', sortedTeams);
     
     sortedTeams.forEach(team => {
         const teamQuota = quotaConfig?.teams?.[team] || { 
@@ -1322,15 +1348,18 @@ function updateTeamAlerts() {
     const alertsContainer = document.getElementById('team-alerts-container');
     alertsContainer.innerHTML = '';
     
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    
     alertsContainer.innerHTML += `
         <div class="alert info">
-            <strong>All Teams:</strong> Monitoring ${ALL_TEAMS.length} teams (${ALL_TEAMS.join(', ')})
+            <strong>All Teams:</strong> Monitoring ${dynamicTeams.length} teams (${dynamicTeams.join(', ')})
         </div>
     `;
     
     const highUsageTeams = [];
     
-    ALL_TEAMS.forEach(team => {
+    dynamicTeams.forEach(team => {
         const teamQuota = quotaConfig?.teams?.[team] || { 
             monthly_limit: 25000, 
             warning_threshold: 60, 
@@ -1389,7 +1418,11 @@ function loadTeamUsersData() {
     
     let allTeamUsers = [];
     
-    ALL_TEAMS.forEach(team => {
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    console.log('🎯 Using dynamic teams for team users data:', dynamicTeams);
+    
+    dynamicTeams.forEach(team => {
         const teamUsersList = usersByTeam[team] || [];
         const teamTotal = teamMetrics[team]?.monthly || 0;
         
@@ -1431,7 +1464,9 @@ function loadTeamUsersData() {
 }
 
 function loadModelDistributionData() {
-    const selectedTeam = ALL_TEAMS[0];
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    const selectedTeam = dynamicTeams[0];
     const modelLabels = ['Claude 3 Opus', 'Claude 3 Sonnet', 'Claude 3 Haiku', 'Claude 3.7 Sonnet', 'Amazon Titan'];
     
     const teamHash = selectedTeam.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -1785,7 +1820,10 @@ async function loadModelUsageData() {
         
         console.log('🎯 Unique models found in database:', uniqueModels);
         
-        const sortedTeams = [...ALL_TEAMS].sort();
+        // Use dynamic teams instead of hardcoded ALL_TEAMS
+        const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+        const sortedTeams = [...dynamicTeams].sort();
+        console.log('🎯 Using dynamic teams for model usage table:', sortedTeams);
         
         // Update table header dynamically - NOW TEAMS AS COLUMNS
         const tableHeader = document.querySelector('#model-usage-table thead tr');
@@ -2240,9 +2278,12 @@ function updateOverviewAlerts(totalRequests, activeUsers, estimatedCost) {
     alertsContainer.innerHTML = '';
     
     // System status alert
+    // Use dynamic teams instead of hardcoded ALL_TEAMS
+    const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
+    
     alertsContainer.innerHTML += `
         <div class="alert info">
-            <strong>System Status:</strong> All services operational - ${totalRequests.toLocaleString()} requests processed today by ${activeUsers} active users
+            <strong>All Users:</strong> Monitoring ${allUsers.length} users across ${dynamicTeams.length} teams
         </div>
     `;
     

@@ -235,10 +235,23 @@ class BedrockMySQLDataService {
                 throw new Error('Not connected to AWS');
             }
             
-            console.log('🗄️ Fetching users from RDS MySQL database - FIXED to use user_limits table for group data');
+            console.log('🗄️ Fetching users from RDS MySQL database - DYNAMIC team discovery from database');
             
-            // FIXED: Get users from user_limits table for correct person and team (group) information
-            // Then get activity data from bedrock_requests table
+            // STEP 1: Get all teams dynamically from database
+            const teamsQuery = `
+                SELECT DISTINCT team 
+                FROM bedrock_usage.user_limits 
+                WHERE team IS NOT NULL AND team != '' 
+                ORDER BY team
+            `;
+            
+            const teamsResult = await this.executeQuery(teamsQuery);
+            const dynamicTeams = teamsResult.map(row => row.team);
+            
+            console.log('🎯 DYNAMIC TEAMS discovered from database:', dynamicTeams);
+            console.log('📊 Total teams found:', dynamicTeams.length);
+            
+            // STEP 2: Get users from user_limits table for correct person and team information
             const usersQuery = `
                 SELECT DISTINCT 
                     ul.user_id,
@@ -259,8 +272,8 @@ class BedrockMySQLDataService {
                 const usersByTeam = {};
                 const userTags = {}; // We'll keep this empty since tags aren't in MySQL
                 
-                // Initialize teams
-                ALL_TEAMS.forEach(team => {
+                // Initialize teams DYNAMICALLY from database
+                dynamicTeams.forEach(team => {
                     usersByTeam[team] = [];
                 });
                 
@@ -280,8 +293,8 @@ class BedrockMySQLDataService {
                         allUsers.push(username);
                     }
                     
-                    // Add to team if team exists in ALL_TEAMS
-                    if (ALL_TEAMS.includes(team)) {
+                    // Add to team if team exists in dynamicTeams
+                    if (dynamicTeams.includes(team)) {
                         if (!usersByTeam[team].includes(username)) {
                             usersByTeam[team].push(username);
                         }
@@ -302,19 +315,20 @@ class BedrockMySQLDataService {
                     };
                 });
                 
-                console.log(`📊 FIXED: Found ${allUsers.length} users in MySQL database using user_limits table`);
-                console.log(`�👥 Users by team:`, Object.keys(usersByTeam).map(team => `${team}: ${usersByTeam[team].length}`).join(', '));
+                console.log(`📊 DYNAMIC: Found ${allUsers.length} users in MySQL database using user_limits table`);
+                console.log(`👥 Users by team:`, Object.keys(usersByTeam).map(team => `${team}: ${usersByTeam[team].length}`).join(', '));
+                console.log(`🎯 DYNAMIC TEAMS: Successfully discovered ${dynamicTeams.length} teams from database`);
                 
-                return { allUsers, usersByTeam, userTags, userPersonMap };
+                return { allUsers, usersByTeam, userTags, userPersonMap, dynamicTeams };
                 
             } catch (error) {
                 console.error('Error fetching users from MySQL:', error);
-                // Fallback to empty data structure
+                // Fallback to empty data structure with dynamic teams
                 const usersByTeam = {};
-                ALL_TEAMS.forEach(team => {
+                dynamicTeams.forEach(team => {
                     usersByTeam[team] = [];
                 });
-                return { allUsers: [], usersByTeam, userTags: {} };
+                return { allUsers: [], usersByTeam, userTags: {}, dynamicTeams };
             }
         }, forceRefresh);
     }
@@ -482,8 +496,12 @@ class BedrockMySQLDataService {
             
             console.log('🏢 TEAM METRICS: Starting team aggregation from fixed user metrics...');
             
+            // Use dynamic teams from database instead of hardcoded ALL_TEAMS
+            const dynamicTeams = users.dynamicTeams || [];
+            console.log('🎯 DYNAMIC TEAMS for team metrics calculation:', dynamicTeams);
+            
             // Calculate team metrics by aggregating user metrics
-            for (const team of ALL_TEAMS) {
+            for (const team of dynamicTeams) {
                 const teamUsers = users.usersByTeam[team] || [];
                 console.log(`🏢 Processing team ${team} with users:`, teamUsers);
                 
@@ -886,8 +904,12 @@ class BedrockMySQLDataService {
             
             console.log('💰 Calculating team metrics for Cost Analysis (HOY-1 hasta HOY-11)');
             
+            // Use dynamic teams from database instead of hardcoded ALL_TEAMS
+            const dynamicTeams = users.dynamicTeams || [];
+            console.log('🎯 DYNAMIC TEAMS for cost analysis team metrics:', dynamicTeams);
+            
             // Calculate team metrics by aggregating user metrics
-            for (const team of ALL_TEAMS) {
+            for (const team of dynamicTeams) {
                 const teamUsers = users.usersByTeam[team] || [];
                 
                 teamMetrics[team] = {
