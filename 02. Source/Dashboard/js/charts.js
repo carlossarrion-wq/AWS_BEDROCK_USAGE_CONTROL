@@ -56,7 +56,31 @@ function updateUserMonthlyChart(data) {
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Requests'
+                                text: 'Requests',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Users',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12
+                                },
+                                maxRotation: 45,
+                                minRotation: 45
                             }
                         }
                     }
@@ -221,7 +245,31 @@ function updateTeamMonthlyChart(data) {
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Requests'
+                                text: 'Requests',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Teams',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                font: {
+                                    size: 12
+                                },
+                                maxRotation: 45,
+                                minRotation: 45
                             }
                         }
                     }
@@ -602,7 +650,7 @@ function updateUserDistributionHistogram(userData) {
                     },
                     ticks: {
                         font: {
-                            size: 8
+                            size: 12
                         },
                         maxRotation: 45,
                         minRotation: 45
