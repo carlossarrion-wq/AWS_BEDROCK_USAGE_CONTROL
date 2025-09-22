@@ -180,11 +180,73 @@ python3 provision_bedrock_user.py --username <username> --group <team_group>
 
 ## Lambda Functions
 
-### Current Lambda Functions in Production
+### Current Lambda Functions in Production (Updated September 2025)
 
-Based on the actual Lambda functions in `Project documents/Source/Lambda Functions/`, the system currently uses the following functions:
+**Major Architecture Change**: The system has been consolidated from multiple Lambda functions into a single, more efficient merged function for real-time processing.
 
-### 1. bedrock-daily-reset
+### 1. bedrock-realtime-usage-controller
+
+**Purpose**: **MERGED FUNCTION** - Combines real-time logging, quota checking, blocking logic, and email notifications into a single efficient function
+
+**Configuration**:
+- **Runtime**: Python 3.9
+- **Memory**: 512 MB
+- **Timeout**: 300 seconds (5 minutes)
+- **Handler**: `lambda_function.lambda_handler`
+- **Execution Role**: `bedrock-realtime-usage-controller-role`
+
+**Environment Variables**:
+```json
+{
+    "RDS_ENDPOINT": "bedrock-usage-db.endpoint.eu-west-1.rds.amazonaws.com",
+    "RDS_USERNAME": "admin",
+    "RDS_PASSWORD": "[secure-password]",
+    "RDS_DATABASE": "bedrock_usage",
+    "AWS_REGION": "eu-west-1",
+    "ACCOUNT_ID": "701055077130",
+    "EMAIL_SERVICE_FUNCTION": "bedrock-email-service",
+    "SNS_TOPIC_ARN": "arn:aws:sns:eu-west-1:701055077130:bedrock-usage-alerts"
+}
+```
+
+**Key Features**:
+- **Real-time CloudTrail Event Processing**: Processes Bedrock API calls in real-time with CET timezone handling
+- **Direct RDS MySQL Integration**: Uses PyMySQL for direct database operations
+- **Auto-provisioning**: Automatically provisions new users in the database
+- **Usage Limit Checking**: Uses stored procedures for efficient limit evaluation
+- **Automatic Blocking**: Implements IAM policy-based blocking when limits are exceeded
+- **Email Notifications**: Integrates with bedrock-email-service for user notifications
+- **Comprehensive Audit Logging**: All operations logged for compliance and debugging
+- **CET Timezone Support**: All timestamps handled in Central European Time
+
+**Merged Functionality**:
+This function combines the capabilities of the previously separate functions:
+- `bedrock-realtime-logger-fixed` (Real-time request logging)
+- `bedrock-policy-manager-enhanced` (Policy management and blocking)
+
+**Critical IAM Permissions Required**:
+- `rds:DescribeDBInstances` - RDS instance access
+- `iam:GetUserPolicy` - Read user IAM policies
+- `iam:PutUserPolicy` - Modify user IAM policies
+- `iam:DeleteUserPolicy` - Delete user IAM policies
+- `iam:GetUser` - Get user information and tags
+- `lambda:InvokeFunction` - Invoke email service function
+- `sns:Publish` - Send SNS notifications
+
+**Database Operations**:
+- Inserts new requests into `bedrock_requests` table
+- Updates user limits and status in `users` table
+- Logs blocking operations in `blocking_operations` table
+- Uses stored procedures for efficient limit checking
+
+**Triggers**:
+- EventBridge Rule: `bedrock-realtime-processing` - Triggered by Bedrock API calls via CloudTrail
+
+**Source Code**: `02. Source/Lambda Functions/bedrock-realtime-usage-controller.py`
+
+**Deployment**: Can be deployed using automated script `deploy_bedrock_realtime_usage_controller.sh`
+
+### 2. bedrock-daily-reset
 
 **Purpose**: Daily reset operations for expired user blocks and administrative flag management with enhanced IAM policy management
 

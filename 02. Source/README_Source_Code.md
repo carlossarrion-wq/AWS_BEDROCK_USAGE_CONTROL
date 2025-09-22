@@ -86,21 +86,30 @@ Source/
 
 | Function Name | Source Location | Database | Purpose |
 |---------------|----------------|----------|---------|
-| `bedrock-realtime-request-logger` | `migration/lambda_package_cet_fixed/` | RDS MySQL | Real-time request logging with CET timezone |
-| `bedrock-mysql-query-executor` | `migration/mysql_query_executor_lambda.py` | RDS MySQL | Dashboard database queries |
-| `bedrock-usage-monitor-current` | `individual_blocking_system/lambda_functions/` | RDS MySQL | Current usage monitoring |
-| `bedrock-daily-reset` | `individual_blocking_system/lambda_functions/` | RDS MySQL | Daily reset operations |
-| `bedrock-email-service` | `individual_blocking_system/lambda_functions/` | None | Email notifications |
-| `bedrock-blocking-history` | `individual_blocking_system/lambda_functions/` | DynamoDB | Audit trail (legacy) |
+| `bedrock-realtime-usage-controller` | `bedrock-realtime-usage-controller.py` | RDS MySQL | **MERGED FUNCTION** - Real-time logging, quota checking, blocking, and email notifications |
+| `bedrock-daily-reset` | `bedrock_daily_reset.py` | RDS MySQL | Daily reset operations |
+| `bedrock-email-service` | `bedrock_email_service.py` | None | Email notifications |
+
+### Recently Merged Functions (September 2025)
+
+**Major Architecture Change**: The system has been consolidated from multiple Lambda functions into a single, more efficient merged function:
+
+**New Merged Function**:
+- `bedrock-realtime-usage-controller` - Combines all real-time processing functionality
+
+**Functions Merged Into New Controller**:
+- `bedrock-realtime-logger-fixed` (Real-time request logging)
+- `bedrock-policy-manager-enhanced` (Policy management and blocking)
 
 ### Obsolete Functions (Removed)
 
-The following functions were removed during the RDS MySQL migration:
-- `bedrock_usage_monitor_enhanced.py` (DynamoDB-based)
-- `bedrock_policy_manager_enhanced.py` (DynamoDB-based)
-- `bedrock_usage_monitor.py` (DynamoDB-based)
-- `bedrock_usage_monitor_with_email.py` (DynamoDB-based)
-- `bedrock_policy_manager.py` (DynamoDB-based)
+The following functions were removed during the Lambda function consolidation (September 2025):
+- `bedrock-realtime-logger-fixed` (merged into bedrock-realtime-usage-controller)
+- `bedrock-policy-manager-enhanced` (merged into bedrock-realtime-usage-controller)
+- `bedrock_usage_monitor_enhanced.py` (DynamoDB-based - legacy)
+- `bedrock_usage_monitor.py` (DynamoDB-based - legacy)
+- `bedrock_usage_monitor_with_email.py` (DynamoDB-based - legacy)
+- `bedrock_policy_manager.py` (DynamoDB-based - legacy)
 
 ### Lambda Function Details
 

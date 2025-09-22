@@ -472,6 +472,32 @@ function getUserPersonTag(username) {
     return null;
 }
 
+// NEW: Function to get user team from database instead of IAM groups
+function getUserTeamFromDB(username) {
+    // Debug logging
+    console.log(`🔍 getUserTeamFromDB called for: ${username}`);
+    
+    // Check if we have user data from MySQL that includes team info
+    if (window.mysqlDataService && window.mysqlDataService.cache && window.mysqlDataService.cache.users && window.mysqlDataService.cache.users.data) {
+        const userData = window.mysqlDataService.cache.users.data;
+        if (userData.userTags && userData.userTags[username] && userData.userTags[username].team) {
+            console.log(`✅ Found team in MySQL userTags: ${userData.userTags[username].team}`);
+            return userData.userTags[username].team;
+        }
+    }
+    
+    // Fallback to iterating through usersByTeam (original method)
+    for (const team in usersByTeam) {
+        if (usersByTeam[team].includes(username)) {
+            console.log(`✅ Found team in usersByTeam: ${team}`);
+            return team;
+        }
+    }
+    
+    console.log(`❌ No team found for: ${username}, returning Unknown`);
+    return "Unknown";
+}
+
 // User Data Loading Functions
 function loadUserMonthlyData() {
     const labels = [];
@@ -879,13 +905,8 @@ async function loadUserUsageDetails() {
     for (const username of sortedUsers) {
         const personTag = getUserPersonTag(username) || "Unknown";
         
-        let userTeam = "Unknown";
-        for (const team in usersByTeam) {
-            if (usersByTeam[team].includes(username)) {
-                userTeam = team;
-                break;
-            }
-        }
+        // FIXED: Use database team information instead of IAM groups
+        const userTeam = getUserTeamFromDB(username);
         
         // FIXED: Use database limits only, no fallback to quota config
         const userQuota = userLimitsFromDB[username] || { 

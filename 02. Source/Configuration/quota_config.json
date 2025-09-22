@@ -24,6 +24,11 @@
       "critical_threshold": 85,
       "monthly_limit": 25000,
       "warning_threshold": 60
+    },
+    "team_sdlc_group": {
+      "critical_threshold": 85,
+      "monthly_limit": 25000,
+      "warning_threshold": 60
     }
   },
   "users": {

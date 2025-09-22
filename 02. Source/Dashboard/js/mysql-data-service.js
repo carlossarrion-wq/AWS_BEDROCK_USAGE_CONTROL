@@ -235,9 +235,9 @@ class BedrockMySQLDataService {
                 throw new Error('Not connected to AWS');
             }
             
-            console.log('🗄️ Fetching users from RDS MySQL database - FIXED to use user_limits table for person data');
+            console.log('🗄️ Fetching users from RDS MySQL database - FIXED to use user_limits table for group data');
             
-            // FIXED: Get users from user_limits table for correct person information
+            // FIXED: Get users from user_limits table for correct person and team (group) information
             // Then get activity data from bedrock_requests table
             const usersQuery = `
                 SELECT DISTINCT 
@@ -264,14 +264,14 @@ class BedrockMySQLDataService {
                     usersByTeam[team] = [];
                 });
                 
-                // Process users from MySQL - now using user_limits table data
+                // Process users from MySQL - now using users table data
                 const userPersonMap = {}; // Store person info for each user
                 usersResult.forEach(row => {
                     const username = row.user_id;
                     const team = row.team || 'Unknown';
                     const person = row.person || 'Unknown';
                     
-                    console.log(`👤 FIXED: User ${username} -> Person: ${person} (from user_limits table)`);
+                    console.log(`👤 FIXED: User ${username} -> Person: ${person}, Team: ${team} (from user_limits table)`);
                     
                     // Store person info for this user
                     userPersonMap[username] = person;
@@ -295,14 +295,15 @@ class BedrockMySQLDataService {
                         }
                     }
                     
-                    // Store person info in userTags for compatibility
+                    // Store person and team info in userTags for compatibility
                     userTags[username] = {
-                        Person: person
+                        Person: person,
+                        team: team
                     };
                 });
                 
                 console.log(`📊 FIXED: Found ${allUsers.length} users in MySQL database using user_limits table`);
-                console.log(`👥 Users by team:`, Object.keys(usersByTeam).map(team => `${team}: ${usersByTeam[team].length}`).join(', '));
+                console.log(`�👥 Users by team:`, Object.keys(usersByTeam).map(team => `${team}: ${usersByTeam[team].length}`).join(', '));
                 
                 return { allUsers, usersByTeam, userTags, userPersonMap };
                 

@@ -31,19 +31,58 @@ async function loadUserBlockingStatus() {
     const userSelect = document.getElementById('user-select');
     userSelect.innerHTML = '<option value="">Select User...</option>';
     
-    // Use real user data from IAM
-    const sortedUsers = [...allUsers].sort();
-    
-    for (const username of sortedUsers) {
-        const personTag = getUserPersonTag(username) || "Unknown";
+        // Use real user data from user_limits table
+        const sortedUsers = [...allUsers].sort();
         
-        let userTeam = "Unknown";
-        for (const team in usersByTeam) {
-            if (usersByTeam[team].includes(username)) {
-                userTeam = team;
-                break;
+        for (const username of sortedUsers) {
+            // FIXED: Get person and team from user_limits table instead of userTags
+            let personTag = "Unknown";
+            let userTeam = "Unknown";
+            
+            try {
+                if (window.mysqlDataService) {
+                    const userInfoQuery = `
+                        SELECT person, team 
+                        FROM bedrock_usage.user_limits 
+                        WHERE user_id = ?
+                    `;
+                    const userInfoResult = await window.mysqlDataService.executeQuery(userInfoQuery, [username]);
+                    if (userInfoResult.length > 0) {
+                        personTag = userInfoResult[0].person || "Unknown";
+                        userTeam = userInfoResult[0].team || "Unknown";
+                        console.log(`👤 FIXED: User ${username} -> Person: ${personTag}, Team: ${userTeam} (from user_limits table)`);
+                    } else {
+                        console.log(`⚠️ No user_limits record found for user ${username}, using fallback`);
+                        // Fallback to getUserPersonTag if available
+                        personTag = getUserPersonTag(username) || "Unknown";
+                        for (const team in usersByTeam) {
+                            if (usersByTeam[team].includes(username)) {
+                                userTeam = team;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback to old method if MySQL service not available
+                    personTag = getUserPersonTag(username) || "Unknown";
+                    for (const team in usersByTeam) {
+                        if (usersByTeam[team].includes(username)) {
+                            userTeam = team;
+                            break;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Error fetching user info for ${username}:`, error);
+                // Fallback to old method
+                personTag = getUserPersonTag(username) || "Unknown";
+                for (const team in usersByTeam) {
+                    if (usersByTeam[team].includes(username)) {
+                        userTeam = team;
+                        break;
+                    }
+                }
             }
-        }
         
         // Add to select dropdown
         userSelect.innerHTML += `<option value="${username}">${username} - ${personTag}</option>`;
@@ -735,31 +774,31 @@ async function unblockUser(username) {
             
             await window.mysqlDataService.executeQuery(adminSafeQuery, [username]);
             
-            // Call IAM policy management Lambda function
-            try {
-                const lambda = new AWS.Lambda({ region: 'eu-west-1' });
-                const policyPayload = {
-                    action: 'unblock',
-                    user_id: username,
-                    reason: 'Manual unblock',
-                    performed_by: 'dashboard_admin'
-                };
-                
-                const policyResponse = await lambda.invoke({
-                    FunctionName: 'bedrock-policy-manager-enhanced',
-                    InvocationType: 'RequestResponse',
-                    Payload: JSON.stringify(policyPayload)
-                }).promise();
-                
-                const policyResult = JSON.parse(policyResponse.Payload);
-                if (policyResult.statusCode !== 200) {
-                    console.error('Failed to update IAM policy for unblocking:', policyResult);
-                } else {
-                    console.log('Successfully updated IAM policy for unblocking');
+                // Call new merged Lambda function for IAM policy management
+                try {
+                    const lambda = new AWS.Lambda({ region: 'eu-west-1' });
+                    const policyPayload = {
+                        action: 'unblock',
+                        user_id: username,
+                        reason: 'Manual unblock',
+                        performed_by: 'dashboard_admin'
+                    };
+                    
+                    const policyResponse = await lambda.invoke({
+                        FunctionName: 'bedrock-realtime-usage-controller',
+                        InvocationType: 'RequestResponse',
+                        Payload: JSON.stringify(policyPayload)
+                    }).promise();
+                    
+                    const policyResult = JSON.parse(policyResponse.Payload);
+                    if (policyResult.statusCode !== 200) {
+                        console.error('Failed to update IAM policy for unblocking:', policyResult);
+                    } else {
+                        console.log('Successfully updated IAM policy for unblocking');
+                    }
+                } catch (error) {
+                    console.error('Error calling IAM policy management:', error);
                 }
-            } catch (error) {
-                console.error('Error calling IAM policy management:', error);
-            }
             
             // Call email service Lambda function
             try {
@@ -1093,7 +1132,7 @@ async function performDynamicAction() {
                 
                 await window.mysqlDataService.executeQuery(adminSafeQuery, [username]);
                 
-                // Call IAM policy management Lambda function
+                // Call new merged Lambda function for IAM policy management
                 try {
                     const lambda = new AWS.Lambda({ region: 'eu-west-1' });
                     const policyPayload = {
@@ -1104,7 +1143,7 @@ async function performDynamicAction() {
                     };
                     
                     const policyResponse = await lambda.invoke({
-                        FunctionName: 'bedrock-policy-manager-enhanced',
+                        FunctionName: 'bedrock-realtime-usage-controller',
                         InvocationType: 'RequestResponse',
                         Payload: JSON.stringify(policyPayload)
                     }).promise();
@@ -1250,7 +1289,7 @@ async function performDynamicAction() {
                     }
                 }
                 
-                // Call IAM policy management Lambda function
+                // Call new merged Lambda function for IAM policy management
                 try {
                     const lambda = new AWS.Lambda({ region: 'eu-west-1' });
                     const policyPayload = {
@@ -1267,7 +1306,7 @@ async function performDynamicAction() {
                     };
                     
                     const policyResponse = await lambda.invoke({
-                        FunctionName: 'bedrock-policy-manager-enhanced',
+                        FunctionName: 'bedrock-realtime-usage-controller',
                         InvocationType: 'RequestResponse',
                         Payload: JSON.stringify(policyPayload)
                     }).promise();
