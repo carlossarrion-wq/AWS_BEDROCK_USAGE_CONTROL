@@ -1137,7 +1137,7 @@ def check_user_status(event: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 def handle_cloudtrail_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Handle CloudTrail events (automatic blocking) - Original functionality"""
+    """Handle CloudTrail events (automatic blocking) - Fixed version"""
     connection = None
     processed_requests = 0
     blocked_requests = 0
@@ -1149,7 +1149,42 @@ def handle_cloudtrail_event(event: Dict[str, Any], context: Any) -> Dict[str, An
         
         events_to_process = []
         
-        if 'detail' in event and 'Records' not in event:
+        # CORRECCIÓN: Manejar eventos de CloudWatch Logs
+        if 'awslogs' in event:
+            logger.info("🔍 Processing CloudWatch Logs event")
+            
+            # Decodificar datos comprimidos
+            import base64
+            import gzip
+            
+            try:
+                compressed_data = event['awslogs']['data']
+                decoded_data = base64.b64decode(compressed_data)
+                decompressed_data = gzip.decompress(decoded_data)
+                log_data = json.loads(decompressed_data.decode('utf-8'))
+                
+                logger.info(f"📦 Decoded CloudWatch Logs data from log group: {log_data.get('logGroup', 'unknown')}")
+                
+                # Extraer eventos de CloudTrail de los logEvents
+                for log_event in log_data.get('logEvents', []):
+                    try:
+                        cloudtrail_event = json.loads(log_event['message'])
+                        # Filtrar solo eventos de Bedrock
+                        if cloudtrail_event.get('eventSource') == 'bedrock.amazonaws.com':
+                            events_to_process.append(cloudtrail_event)
+                            logger.info(f"🎯 Found Bedrock event: {cloudtrail_event.get('eventName')} from user {cloudtrail_event.get('userIdentity', {}).get('userName', 'unknown')}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse log event message: {str(e)}")
+                        continue
+                        
+            except Exception as e:
+                logger.error(f"Failed to decode CloudWatch Logs data: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({'error': f'Failed to decode CloudWatch Logs data: {str(e)}'})
+                }
+                    
+        elif 'detail' in event and 'Records' not in event:
             logger.info("🔍 Processing direct CloudWatch event")
             events_to_process = [event['detail']]
         else:

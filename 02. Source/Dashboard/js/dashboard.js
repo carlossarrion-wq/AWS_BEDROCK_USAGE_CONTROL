@@ -662,12 +662,24 @@ async function updateUserConsumptionMetrics() {
             // Get hourly breakdown for today from MySQL - using browser's current date/time directly
             // Use browser's current date/time directly as suggested
             
-            // Get current browser date for proper timezone handling - use LOCAL date, not UTC
-            const browserNow = new Date();
-            const todayStr = browserNow.toLocaleDateString('en-CA'); // Returns YYYY-MM-DD in local timezone
+            // FIXED: Since database stores timestamps in CET, we need to ensure proper CET date handling
+            // Create a proper CET date string that matches the database timezone
+            const now = new Date();
             
-            console.log('🕐 Browser Today String for hourly query:', todayStr);
-            console.log('🕐 Using browser date for hourly calculations - simplified approach');
+            // Convert to CET/CEST timezone properly
+            // CET is UTC+1, CEST is UTC+2 (DST from last Sunday in March to last Sunday in October)
+            const cetOffset = now.getTimezoneOffset() === -60 ? 1 : 2; // Hours ahead of UTC
+            const cetTime = new Date(now.getTime() + (cetOffset * 60 * 60 * 1000));
+            
+            // Format as YYYY-MM-DD in CET timezone
+            const year = cetTime.getUTCFullYear();
+            const month = String(cetTime.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(cetTime.getUTCDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${day}`;
+            
+            console.log('🕐 CET Today String for hourly query:', todayStr);
+            console.log('🕐 Using CET timezone for hourly calculations - database stores in CET');
+            console.log('🕐 CET offset:', cetOffset);
             
             const hourlyQuery = `
                 SELECT 
