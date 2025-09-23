@@ -1,1 +1,0 @@
-{"statusCode": 200, "body": "{\"user_id\": \"sap_003\", \"is_blocked\": false, \"block_reason\": \"Manual unblock\", \"blocked_since\": \"2025-09-21T21:45:10\", \"expires_at\": null, \"block_type\": \"Manual\", \"performed_by\": \"dashboard_admin\", \"administrative_safe\": false, \"checked_at\": \"2025-09-23T13:26:35.852183\"}"}
