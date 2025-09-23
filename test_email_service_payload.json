@@ -1,0 +1,10 @@
+{
+  "action": "send_blocking_email",
+  "user_id": "sdlc_004",
+  "usage_record": {
+    "request_count": 350,
+    "daily_limit": 350,
+    "team": "yo_leo_sap_group"
+  },
+  "reason": "Daily limit exceeded"
+}

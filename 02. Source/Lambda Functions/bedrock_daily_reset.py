@@ -301,6 +301,7 @@ def execute_user_unblocking(connection, user_id: str) -> bool:
                 UPDATE user_blocking_status 
                 SET is_blocked = 'N',
                     blocked_reason = 'Daily reset unblock',
+                    blocked_at = NULL,
                     blocked_until = NULL,
                     last_reset_at = %s,
                     updated_at = %s

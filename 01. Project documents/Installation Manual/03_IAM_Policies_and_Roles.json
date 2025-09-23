@@ -58,6 +58,31 @@
         "arn:aws:iam::701055077130:policy/BedrockDashboardAccessPolicy"
       ],
       "creation_command": "aws iam create-role --role-name bedrock-dashboard-access-role --assume-role-policy-document file://bedrock-dashboard-access-trust-policy.json"
+    },
+    "bedrock-realtime-usage-controller-role": {
+      "description": "Execution role for the realtime usage controller Lambda function (UPDATED 2025-09-23)",
+      "assume_role_policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "attached_policies": [
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      ],
+      "inline_policies": [
+        "BedrockRealtimeUsageControllerPolicy"
+      ],
+      "creation_command": "aws iam create-role --role-name bedrock-realtime-usage-controller-role --assume-role-policy-document file://bedrock-realtime-usage-controller-trust-policy.json",
+      "policy_fix_applied": "2025-09-23",
+      "policy_fix_description": "Added missing IAM inline policy permissions: iam:GetUserPolicy, iam:PutUserPolicy, iam:DeleteUserPolicy, iam:ListUserPolicies"
     }
   },
   "iam_policies": {

@@ -1,0 +1,30 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.05",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::701055077130:user/sap_004",
+        "accountId": "701055077130",
+        "userName": "sap_004"
+      },
+      "eventTime": "2025-09-23T20:43:00Z",
+      "eventSource": "bedrock.amazonaws.com",
+      "eventName": "InvokeModel",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.168.1.100",
+      "userAgent": "aws-cli/2.0.0",
+      "requestParameters": {
+        "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "body": "test"
+      },
+      "responseElements": null,
+      "requestID": "12345678-1234-1234-1234-123456789012",
+      "eventID": "87654321-4321-4321-4321-210987654321",
+      "eventType": "AwsApiCall",
+      "recipientAccountId": "701055077130",
+      "serviceEventDetails": null
+    }
+  ]
+}

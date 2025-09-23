@@ -539,6 +539,14 @@ async function performManualBlock() {
             // Get CET timestamp for blocking operations - FIXED: Store CET values directly in database
             const cetTimestamp = getCurrentCETTimestamp();
             
+            // Convert expiration date to CET format if it's not indefinite
+            let blockUntilCET = null;
+            if (expiresAt !== 'Indefinite') {
+                // Convert the expiration date to CET format for database storage
+                const expirationDate = new Date(expiresAt);
+                blockUntilCET = convertDateToCETString(expirationDate);
+            }
+            
             // Insert or update user blocking status with requests_at_blocking - FIXED: Store CET timestamps directly
             const blockQuery = `
                 INSERT INTO bedrock_usage.user_blocking_status 
@@ -553,8 +561,7 @@ async function performManualBlock() {
                 updated_at = VALUES(updated_at)
             `;
             
-            const blockUntil = expiresAt === 'Indefinite' ? null : expiresAt;
-            await window.mysqlDataService.executeQuery(blockQuery, [username, reason, cetTimestamp, blockUntil, dailyUsage, cetTimestamp, cetTimestamp]);
+            await window.mysqlDataService.executeQuery(blockQuery, [username, reason, cetTimestamp, blockUntilCET, dailyUsage, cetTimestamp, cetTimestamp]);
             
             // Insert audit log entry with CET timestamp and usage data - FIXED: Store CET timestamps directly
             const auditQuery = `
@@ -666,32 +673,35 @@ async function blockUser(username) {
     try {
         // Use MySQL database to perform blocking
         if (window.mysqlDataService) {
-            // Calculate expiration date (1 day from now)
-            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+            // Calculate expiration date (1 day from now) in CET
+            const currentCETTime = new Date();
+            const expirationCETTime = new Date(currentCETTime.getTime() + 24 * 60 * 60 * 1000);
+            const expiresAtCET = convertDateToCETString(expirationCETTime);
+            const currentCETString = getCurrentCETTimestamp();
             
-            // Insert or update user blocking status
+            // Insert or update user blocking status with CET timestamps
             const blockQuery = `
                 INSERT INTO bedrock_usage.user_blocking_status 
                 (user_id, is_blocked, blocked_reason, blocked_at, blocked_until, created_at, updated_at)
-                VALUES (?, 'Y', ?, NOW(), ?, NOW(), NOW())
+                VALUES (?, 'Y', ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                 is_blocked = 'Y',
                 blocked_reason = VALUES(blocked_reason),
-                blocked_at = NOW(),
+                blocked_at = VALUES(blocked_at),
                 blocked_until = VALUES(blocked_until),
-                updated_at = NOW()
+                updated_at = VALUES(updated_at)
             `;
             
-            await window.mysqlDataService.executeQuery(blockQuery, [username, reason, expiresAt]);
+            await window.mysqlDataService.executeQuery(blockQuery, [username, reason, currentCETString, expiresAtCET, currentCETString, currentCETString]);
             
-            // Insert audit log entry
+            // Insert audit log entry with CET timestamp
             const auditQuery = `
                 INSERT INTO bedrock_usage.blocking_audit_log 
-                (user_id, operation_type, operation_reason, performed_by, new_status, operation_timestamp, created_at, updated_at)
-                VALUES (?, 'ADMIN_BLOCK', ?, 'dashboard_admin', 'Y', NOW(), NOW(), NOW())
+                (user_id, operation_type, operation_reason, performed_by, new_status, operation_timestamp, created_at)
+                VALUES (?, 'ADMIN_BLOCK', ?, 'dashboard_admin', 'Y', ?, ?)
             `;
             
-            await window.mysqlDataService.executeQuery(auditQuery, [username, reason]);
+            await window.mysqlDataService.executeQuery(auditQuery, [username, reason, currentCETString, currentCETString]);
             
             alert(`User ${username} has been blocked successfully`);
             // Force complete refresh of blocking data
@@ -735,17 +745,19 @@ async function unblockUser(username) {
             
             const usagePercentage = dailyLimit > 0 ? Math.round((dailyUsage / dailyLimit) * 100) : 0;
             
-            // Update user blocking status
+            // Update user blocking status with CET timestamp
+            const currentCETString = getCurrentCETTimestamp();
             const unblockQuery = `
                 UPDATE bedrock_usage.user_blocking_status 
                 SET is_blocked = 'N',
                     blocked_reason = 'Manual unblock',
+                    blocked_at = NULL,
                     blocked_until = NULL,
-                    last_reset_at = NOW()
+                    last_reset_at = ?
                 WHERE user_id = ?
             `;
             
-            await window.mysqlDataService.executeQuery(unblockQuery, [username]);
+            await window.mysqlDataService.executeQuery(unblockQuery, [currentCETString, username]);
             
             // Get CET timestamp for audit log
             const cetTimestamp = getCurrentCETTimestamp();
@@ -1066,18 +1078,20 @@ async function performDynamicAction() {
         // Unblock user using MySQL database
         try {
             if (window.mysqlDataService) {
-                // Update user blocking status
+                // Update user blocking status with CET timestamp
+                const currentCETString = getCurrentCETTimestamp();
                 const unblockQuery = `
                     UPDATE bedrock_usage.user_blocking_status 
                     SET is_blocked = 'N',
                         blocked_reason = 'Manual unblock',
+                        blocked_at = NULL,
                         blocked_until = NULL,
-                        last_reset_at = NOW(),
-                        updated_at = NOW()
+                        last_reset_at = ?,
+                        updated_at = ?
                     WHERE user_id = ?
                 `;
                 
-                await window.mysqlDataService.executeQuery(unblockQuery, [username]);
+                await window.mysqlDataService.executeQuery(unblockQuery, [currentCETString, currentCETString, username]);
                 
                 // Get current usage data for audit log - FIXED: Use same data source as Daily Usage tab
                 const fullDailyData = userMetrics[username]?.daily || Array(11).fill(0);
@@ -1212,20 +1226,28 @@ async function performDynamicAction() {
         try {
             // Use MySQL database to perform blocking
             if (window.mysqlDataService) {
-                // Insert or update user blocking status
+                // Insert or update user blocking status with CET timestamps
+                const currentCETString = getCurrentCETTimestamp();
+                
+                // Convert expiration date to CET format if it's not indefinite
+                let blockUntilCET = null;
+                if (expiresAt !== 'Indefinite') {
+                    const expirationDate = new Date(expiresAt);
+                    blockUntilCET = convertDateToCETString(expirationDate);
+                }
+                
                 const blockQuery = `
                     INSERT INTO bedrock_usage.user_blocking_status 
                     (user_id, is_blocked, blocked_reason, blocked_at, blocked_until, created_at)
-                    VALUES (?, 'Y', ?, NOW(), ?, NOW())
+                    VALUES (?, 'Y', ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                     is_blocked = 'Y',
                     blocked_reason = VALUES(blocked_reason),
-                    blocked_at = NOW(),
+                    blocked_at = VALUES(blocked_at),
                     blocked_until = VALUES(blocked_until)
                 `;
                 
-                const blockUntil = expiresAt === 'Indefinite' ? null : expiresAt;
-                await window.mysqlDataService.executeQuery(blockQuery, [username, reason, blockUntil]);
+                await window.mysqlDataService.executeQuery(blockQuery, [username, reason, currentCETString, blockUntilCET, currentCETString]);
                 
                 // Get current usage data for audit log - FIXED: Use same data source as Daily Usage tab
                 const fullDailyData = userMetrics[username]?.daily || Array(11).fill(0);
@@ -1436,5 +1458,21 @@ function getCurrentCETTimestamp() {
         second: '2-digit'
     }).format(now);
     
-    return cetTime.replace(' ', 'T');
+    return cetTime.replace('T', ' '); // MySQL datetime format: YYYY-MM-DD HH:MM:SS
+}
+
+// Helper function to convert a Date object to CET string for database storage
+function convertDateToCETString(date) {
+    // Convert the date to CET timezone and format for MySQL
+    const cetTime = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Europe/Madrid',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    }).format(date);
+    
+    return cetTime.replace('T', ' '); // MySQL datetime format: YYYY-MM-DD HH:MM:SS
 }
