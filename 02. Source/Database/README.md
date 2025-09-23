@@ -2,43 +2,35 @@
 
 This directory contains the structured DDL (Data Definition Language) files for the AWS Bedrock Usage Control RDS MySQL database.
 
+**UPDATED**: All DDL files have been synchronized with the production database schema as of 2025-09-23.
+
 ## Directory Structure
 
 ```
 Database/
 ├── README.md                    # This file
-├── OLD-TO-BE-REMOVED/          # Previous unstructured SQL files
 ├── Tables/                     # Table creation scripts
-│   ├── users.sql
+│   ├── user_limits.sql         # CORRECTED: Main user limits table (was users.sql)
 │   ├── bedrock_requests.sql
-│   ├── blocking_operations.sql
-│   └── model_pricing.sql
+│   ├── user_blocking_status.sql
+│   └── blocking_audit_log.sql
 ├── Views/                      # View creation scripts
-│   ├── v_user_realtime_usage.sql
-│   ├── v_hourly_usage.sql
-│   ├── v_model_usage_stats.sql
-│   ├── v_team_usage_dashboard.sql
-│   └── v_last_10_days_usage.sql
+│   └── v_user_realtime_usage.sql # UPDATED: Production schema
 ├── Stored_Procedures/          # Stored procedure scripts
-│   ├── CheckUserLimits.sql
-│   ├── LogBedrockRequest.sql
-│   ├── ExecuteUserBlocking.sql
-│   └── ExecuteUserUnblocking.sql
-├── Indexes/                    # Additional index scripts
-│   └── additional_indexes.sql
-├── Views/                      # View scripts (empty - no custom views)
+│   └── CheckUserLimits.sql     # UPDATED: Production schema
+├── Indexes/                    # Additional index scripts (if any)
 ├── Functions/                  # Function scripts (empty - no custom functions)
 └── Triggers/                   # Trigger scripts (empty - no triggers)
 ```
 
-## Database Objects
+## Database Objects (Production Schema)
 
 ### Tables
 
-1. **users** - Stores user information and quotas
-2. **bedrock_requests** - Individual request records table (partitioned by date)
-3. **blocking_operations** - Blocking operations log table for audit trail
-4. **model_pricing** - Model pricing table for cost calculations
+1. **user_limits** - Stores user information, quotas, and administrative protection settings
+2. **bedrock_requests** - Individual request records table with tokens and cost tracking
+3. **user_blocking_status** - Current blocking status for users
+4. **blocking_audit_log** - Complete audit trail of blocking/unblocking operations
 
 ### Views
 

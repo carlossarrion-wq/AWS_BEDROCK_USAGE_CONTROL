@@ -1,84 +1,81 @@
 -- =====================================================
 -- Stored Procedure: CheckUserLimits
 -- Description: Check if user should be blocked (called on each request)
+-- Extracted from production database: bedrock-usage-mysql.czuimyk2qu10.eu-west-1.rds.amazonaws.com
+-- Database: bedrock_usage
 -- =====================================================
 
 DELIMITER //
 
-CREATE PROCEDURE CheckUserLimits(
-    IN p_user_id VARCHAR(255),
-    OUT p_should_block BOOLEAN,
-    OUT p_block_reason VARCHAR(500),
-    OUT p_daily_usage INT,
-    OUT p_monthly_usage INT,
-    OUT p_daily_percent DECIMAL(5,2),
-    OUT p_monthly_percent DECIMAL(5,2)
+CREATE DEFINER=`admin`@`%` PROCEDURE `CheckUserLimits`(
+    IN p_user_id VARCHAR(255)
 )
 BEGIN
-    DECLARE v_daily_limit INT DEFAULT 250;
-    DECLARE v_monthly_limit INT DEFAULT 5000;
+    DECLARE v_daily_request_limit INT DEFAULT 350;
+    DECLARE v_monthly_request_limit INT DEFAULT 5000;
     DECLARE v_critical_threshold INT DEFAULT 85;
     DECLARE v_is_blocked BOOLEAN DEFAULT FALSE;
     DECLARE v_blocked_until TIMESTAMP;
     DECLARE v_admin_protection VARCHAR(255);
-    
-    -- Get user limits and current status
-    SELECT daily_limit, monthly_limit, critical_threshold, is_blocked, blocked_until, admin_protection_by
-    INTO v_daily_limit, v_monthly_limit, v_critical_threshold, v_is_blocked, v_blocked_until, v_admin_protection
-    FROM users 
+    DECLARE v_daily_requests_used INT DEFAULT 0;
+    DECLARE v_monthly_requests_used INT DEFAULT 0;
+    DECLARE v_daily_percent DECIMAL(5,2) DEFAULT 0;
+    DECLARE v_monthly_percent DECIMAL(5,2) DEFAULT 0;
+    DECLARE v_should_block BOOLEAN DEFAULT FALSE;
+    DECLARE v_block_reason VARCHAR(500) DEFAULT NULL;
+
+    -- Get user limits and current status from user_limits table
+    SELECT daily_request_limit, monthly_request_limit
+    INTO v_daily_request_limit, v_monthly_request_limit
+    FROM user_limits
     WHERE user_id = p_user_id;
-    
-    -- Get current usage
-    SELECT 
-        COALESCE(today_requests, 0),
-        COALESCE(monthly_requests, 0),
-        COALESCE(daily_usage_percent, 0),
-        COALESCE(monthly_usage_percent, 0)
-    INTO p_daily_usage, p_monthly_usage, p_daily_percent, p_monthly_percent
-    FROM v_user_realtime_usage
-    WHERE user_id = p_user_id;
-    
-    -- Check if already blocked
-    IF v_is_blocked = TRUE THEN
-        -- Check if block has expired
-        IF v_blocked_until IS NOT NULL AND v_blocked_until <= NOW() THEN
-            -- Unblock user
-            UPDATE users 
-            SET is_blocked = FALSE, blocked_reason = NULL, blocked_until = NULL
-            WHERE user_id = p_user_id;
-            SET p_should_block = FALSE;
-            SET p_block_reason = NULL;
-        ELSE
-            SET p_should_block = TRUE;
-            SET p_block_reason = 'User is currently blocked';
-        END IF;
-    ELSE
-        -- Check limits (only if not admin protected)
-        IF v_admin_protection IS NULL THEN
-            IF p_daily_percent >= v_critical_threshold OR p_monthly_percent >= v_critical_threshold THEN
-                SET p_should_block = TRUE;
-                SET p_block_reason = CONCAT('Usage limit exceeded: ', 
-                    GREATEST(p_daily_percent, p_monthly_percent), '% of limit');
-                
-                -- Auto-block user
-                UPDATE users 
-                SET is_blocked = TRUE, 
-                    blocked_reason = p_block_reason,
-                    blocked_until = DATE_ADD(NOW(), INTERVAL 1 DAY)
-                WHERE user_id = p_user_id;
-                
-                -- Log blocking operation
-                INSERT INTO blocking_operations (user_id, operation, reason, performed_by)
-                VALUES (p_user_id, 'block', p_block_reason, 'system');
-            ELSE
-                SET p_should_block = FALSE;
-                SET p_block_reason = NULL;
-            END IF;
-        ELSE
-            SET p_should_block = FALSE;
-            SET p_block_reason = NULL;
-        END IF;
+
+    -- If user doesn't exist in user_limits, use defaults
+    IF v_daily_request_limit IS NULL THEN
+        SET v_daily_request_limit = 350;
+        SET v_monthly_request_limit = 5000;
     END IF;
+
+    -- Get current daily usage (requests today)
+    SELECT COUNT(*)
+    INTO v_daily_requests_used
+    FROM bedrock_requests
+    WHERE user_id = p_user_id
+    AND DATE(request_timestamp) = CURDATE();
+
+    -- Get current monthly usage (requests this month)
+    SELECT COUNT(*)
+    INTO v_monthly_requests_used
+    FROM bedrock_requests
+    WHERE user_id = p_user_id
+    AND DATE(request_timestamp) >= DATE_FORMAT(NOW(), '%Y-%m-01');
+
+    -- Calculate usage percentages
+    SET v_daily_percent = (v_daily_requests_used / v_daily_request_limit) * 100;
+    SET v_monthly_percent = (v_monthly_requests_used / v_monthly_request_limit) * 100;
+
+    -- Check if user should be blocked based on usage
+    IF v_daily_percent >= v_critical_threshold OR v_monthly_percent >= v_critical_threshold THEN
+        SET v_should_block = TRUE;
+        SET v_block_reason = CONCAT('Usage limit exceeded: Daily: ',
+            ROUND(v_daily_percent, 1), '% (', v_daily_requests_used, '/', v_daily_request_limit, '), Monthly: ',
+            ROUND(v_monthly_percent, 1), '% (', v_monthly_requests_used, '/', v_monthly_request_limit, ')');
+    ELSE
+        SET v_should_block = FALSE;
+        SET v_block_reason = NULL;
+    END IF;
+
+    -- Return results as a SELECT statement (for Lambda function compatibility)
+    SELECT
+        v_should_block as should_block,
+        v_block_reason as block_reason,
+        v_daily_requests_used as daily_requests_used,
+        v_monthly_requests_used as monthly_requests_used,
+        v_daily_percent as daily_percent,
+        v_monthly_percent as monthly_percent,
+        v_daily_request_limit as daily_limit,
+        v_monthly_request_limit as monthly_limit;
+
 END //
 
 DELIMITER ;
