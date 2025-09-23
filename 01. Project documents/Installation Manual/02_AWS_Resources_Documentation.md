@@ -299,13 +299,14 @@ This function combines the capabilities of the previously separate functions:
 
 ### 2. bedrock-email-service
 
-**Purpose**: Centralized email notification service for all system notifications with comprehensive template support
+**Purpose**: **ENHANCED CENTRALIZED EMAIL SERVICE** - Professional email notification service with sophisticated HTML templates and comprehensive notification support
 
 **Configuration**:
 - **Runtime**: Python 3.9
 - **Memory**: 256 MB
 - **Timeout**: 30 seconds
-- **Handler**: `bedrock_email_service.lambda_handler`
+- **Handler**: `lambda_handler.lambda_handler`
+- **Execution Role**: `bedrock-email-service-role`
 
 **Environment Variables**:
 ```json
@@ -315,26 +316,43 @@ This function combines the capabilities of the previously separate functions:
 ```
 
 **Key Features**:
-- **Gmail SMTP Integration**: Direct email delivery via Gmail SMTP
-- **Template-Based Email Generation**: HTML and plain text templates
-- **Multiple Notification Types**: Warning, blocking, unblocking, admin notifications
-- **User Display Name Resolution**: Intelligent name resolution from IAM tags
-- **Spanish Language Templates**: All emails in Spanish with proper formatting
-- **Color-Coded Templates**: Amber (warnings), Red (blocking), Green (unblocking)
-- **CET Timezone Support**: Proper timezone handling for Madrid time
+- **Professional HTML Email Templates**: Sophisticated responsive design with CSS styling
+- **Gmail SMTP Integration**: Direct email delivery via Gmail SMTP with secure authentication
+- **Color-Coded Email System**: Visual distinction for different notification types
+- **Multi-Language Support**: Spanish language templates with proper formatting
+- **User Display Name Resolution**: Intelligent name resolution from IAM tags and user information
+- **CET Timezone Support**: All timestamps displayed in Central European Time (Madrid)
+- **Template-Based Architecture**: Modular email generation with HTML and plain text fallbacks
+- **Enhanced Visual Design**: Professional corporate styling with proper branding
 
 **Email Types Supported**:
-- **Warning Emails**: 80% quota reached (amber color)
-- **Blocking Emails**: 100% quota exceeded (light red color)
-- **Unblocking Emails**: Daily reset (green color)
-- **Admin Blocking Emails**: Manual admin block (light red color)
-- **Admin Unblocking Emails**: Manual admin unblock (green color)
+- **Warning Emails**: 80% quota reached (amber/orange color scheme)
+- **Blocking Emails**: 100% quota exceeded (light red color scheme)
+- **Unblocking Emails**: Daily reset notifications (green color scheme)
+- **Admin Blocking Emails**: Manual administrative blocks (light red color scheme)
+- **Admin Unblocking Emails**: Manual administrative unblocks (green color scheme)
 
-**Configuration File**: `email_credentials.json` (Gmail SMTP credentials)
+**Enhanced Email Features**:
+- **Responsive Design**: Emails display correctly on desktop and mobile devices
+- **Professional Styling**: Corporate-grade email templates with consistent branding
+- **Rich Content**: HTML formatting with proper typography and spacing
+- **Fallback Support**: Plain text versions for email clients that don't support HTML
+- **Security Headers**: Proper email headers for spam prevention and deliverability
 
-**Source Code**: `Project documents/Source/Lambda Functions/bedrock_email_service.py`
+**Configuration Files**:
+- `email_credentials.json`: Gmail SMTP credentials and configuration
+- `lambda_handler.py`: Entry point handler for proper Lambda integration
 
-**Integration**: Invoked by other Lambda functions for email notifications
+**Source Code**: 
+- Main Service: `02. Source/Lambda Functions/bedrock_email_service.py`
+- Handler: `lambda_handler.py` (entry point)
+
+**Integration**: 
+- Invoked by `bedrock-realtime-usage-controller` for user notifications
+- Invoked by `bedrock-daily-reset` for unblocking notifications
+- Invoked by `bedrock-policy-manager-enhanced` for admin notifications
+
+**Deployment**: Enhanced deployment with proper handler configuration and dependencies
 
 ### 3. bedrock-policy-manager-enhanced
 

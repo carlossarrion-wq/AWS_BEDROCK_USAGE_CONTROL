@@ -241,10 +241,17 @@ When updating the system:
 
 ## 📈 Version Information
 
-- **Documentation Version**: 2.0.0
-- **System Version**: 2.0.0
-- **Last Updated**: January 2025
+- **Documentation Version**: 2.1.0
+- **System Version**: 2.1.0
+- **Last Updated**: September 2025
 - **Compatibility**: AWS CLI v2.x, Python 3.9+
+
+### Recent Updates (v2.1.0)
+- **Enhanced Email Service**: Professional HTML email templates with sophisticated styling
+- **Improved Lambda Integration**: Fixed bedrock-email-service handler configuration
+- **Color-Coded Notifications**: Visual distinction for different notification types
+- **Responsive Email Design**: Mobile-friendly email templates
+- **CET Timezone Support**: All timestamps in Central European Time
 
 ## 🔄 Document Maintenance
 
@@ -254,6 +261,7 @@ When updating the system:
 - **Quarterly**: Comprehensive review and optimization
 
 ### Change Log
+- **v2.1.0**: Enhanced email service with professional HTML templates and improved Lambda integration
 - **v2.0.0**: Complete documentation rewrite with enhanced deployment automation
 - **v1.x**: Initial documentation versions (legacy)
 

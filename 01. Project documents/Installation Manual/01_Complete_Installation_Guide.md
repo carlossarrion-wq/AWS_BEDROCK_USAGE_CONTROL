@@ -383,8 +383,9 @@ zip -r ../../lambda_deployments/bedrock-daily-reset.zip \
     bedrock_daily_reset.py \
     quota_config.json
 
-# Package Email Service Lambda
+# Package Email Service Lambda (Enhanced Version)
 zip -r ../../lambda_deployments/bedrock-email-service.zip \
+    lambda_handler.py \
     bedrock_email_service.py \
     email_credentials.json
 
@@ -505,7 +506,7 @@ aws lambda create-function \
     --function-name bedrock-email-service \
     --runtime python3.9 \
     --role arn:aws:iam::$AWS_ACCOUNT_ID:role/bedrock-usage-monitor-role \
-    --handler bedrock_email_service.lambda_handler \
+    --handler lambda_handler.lambda_handler \
     --zip-file fileb://lambda_deployments/bedrock-email-service.zip \
     --timeout 30 \
     --memory-size 256 \
@@ -912,47 +913,128 @@ pkill -f "python3 -m http.server"
 
 ## Email Notifications Setup
 
-### 1. Configure SES (Simple Email Service)
+### 1. Enhanced Email Service Configuration
+
+The system now includes a sophisticated email service with professional HTML templates and CSS styling.
+
+#### Email Service Features:
+- **Professional Templates**: HTML/CSS with responsive design
+- **Color-Coded Notifications**: 
+  - 🟡 Amber (#F4B860): Warning emails (80% quota reached)
+  - 🔴 Light Red (#EC7266): Blocking emails
+  - 🟢 Green (#9CD286): Unblocking emails
+- **Visual Elements**: Progress bars, statistics cards, professional typography
+- **Multi-Type Support**: Warning, blocking, unblocking, admin notifications
+
+### 2. Configure Email Service
 
 ```bash
-# Verify sender email address
+# Update email credentials for enhanced service
+cat > email_credentials_enhanced.json << 'EOF'
+{
+  "gmail_smtp": {
+    "server": "smtp.gmail.com",
+    "port": 587,
+    "user": "your-email@gmail.com",
+    "password": "your-app-password",
+    "use_tls": true
+  },
+  "email_settings": {
+    "default_language": "es",
+    "timezone": "Europe/Madrid",
+    "reply_to": "your-email@gmail.com"
+  }
+}
+EOF
+
+# Copy to Lambda function directory
+cp email_credentials_enhanced.json "02. Source/Lambda Functions/email_credentials.json"
+```
+
+### 3. Deploy Enhanced Email Service
+
+```bash
+# Use the automated deployment script for email service
+cd "02. Source/Lambda Functions"
+chmod +x deploy_email_service_fix.sh
+./deploy_email_service_fix.sh
+```
+
+**What the deployment script does:**
+- Creates proper `lambda_handler.py` entry point
+- Packages `bedrock_email_service.py` with enhanced templates
+- Includes email credentials configuration
+- Updates Lambda function with correct handler
+- Verifies deployment success
+
+### 4. Test Enhanced Email Service
+
+```bash
+# Test the enhanced email service integration
+python3 test_email_integration.py
+
+# Expected output:
+# 📊 TEST SUMMARY
+# Direct Email Service: ✅ PASS
+# Controller Integration: ✅ PASS
+# 🎉 All tests PASSED! Email integration is working correctly.
+```
+
+### 5. Email Template Examples
+
+The enhanced email service provides professional templates:
+
+#### Blocking Email Template:
+- Professional header with color-coded background
+- Usage statistics with visual progress indicators
+- Clear action items and next steps
+- Responsive design for all devices
+
+#### Unblocking Email Template:
+- Success-themed green color scheme
+- Clear restoration confirmation
+- Usage guidelines and best practices
+- Professional footer with system information
+
+### 6. Configure SES (Alternative to Gmail)
+
+```bash
+# If using SES instead of Gmail SMTP
 aws ses verify-email-identity --email-address admin@yourcompany.com
 
 # Check verification status
 aws ses get-identity-verification-attributes --identities admin@yourcompany.com
 
-# If in sandbox mode, verify recipient emails too
-aws ses verify-email-identity --email-address user@yourcompany.com
-```
-
-### 2. Update Email Credentials
-
-```bash
-# Update email credentials in Lambda function
-cat > email_credentials_update.json << 'EOF'
+# Update email credentials for SES
+cat > email_credentials_ses.json << 'EOF'
 {
-    "smtp_server": "email-smtp.eu-west-1.amazonaws.com",
-    "smtp_port": 587,
-    "smtp_username": "YOUR_SES_SMTP_USERNAME",
-    "smtp_password": "YOUR_SES_SMTP_PASSWORD",
+  "ses_config": {
+    "region": "eu-west-1",
     "sender_email": "admin@yourcompany.com",
     "sender_name": "Bedrock Usage Control System"
+  },
+  "email_settings": {
+    "default_language": "es",
+    "timezone": "Europe/Madrid"
+  }
 }
 EOF
-
-# Copy to Lambda function directory
-cp email_credentials_update.json individual_blocking_system/lambda_functions/email_credentials.json
 ```
 
-### 3. Test Email Functionality
+### 7. Troubleshooting Email Issues
 
 ```bash
-# Test email service using the test script
-cd individual_blocking_system/lambda_functions
-python3 test_email_service.py
+# Check email service logs
+aws logs tail /aws/lambda/bedrock-email-service --follow
 
-# Check SES sending statistics
-aws ses get-send-statistics
+# Test email service directly
+aws lambda invoke \
+    --function-name bedrock-email-service \
+    --payload '{"action": "send_blocking_email", "user_id": "test_user", "usage_record": {"request_count": 350, "daily_limit": 350, "team": "test_team"}, "reason": "Daily limit exceeded"}' \
+    email_test_response.json
+
+# Check response
+cat email_test_response.json
 ```
 
 ## Testing & Verification
