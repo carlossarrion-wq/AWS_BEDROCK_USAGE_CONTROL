@@ -849,6 +849,12 @@
                     </svg>
                     Blocking Management
                 </button>
+                <button class="tab-button" onclick="showTab('aws-costs-tab')">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 20px; height: 20px; margin-right: 8px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H4.5m2.25 0v3.75c0 .414.336.75.75.75s.75-.336.75-.75V4.5m0 0h1.5m0 0v.375c0 .621.504 1.125 1.125 1.125H9.75v-3.75c0-.621.504-1.125 1.125-1.125h1.5m0 0h.375c0 .621.504 1.125 1.125 1.125H15m1.5 0v.75A.75.75 0 0115 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H16.5m0 0h.375c0 .621.504 1.125 1.125 1.125H18.75m-2.25-3.75v3.75c0 .414.336.75.75.75s.75-.336.75-.75V4.5h.75m0 0v.375c0 .621.504 1.125 1.125 1.125H21m-1.5 0v.75A.75.75 0 0118 6h-.75" />
+                    </svg>
+                    AWS Costs Control
+                </button>
             </div>
             
             <!-- User Consumption Tab -->
@@ -1514,6 +1520,252 @@
                     </table>
                 </div>
             </div>
+            
+            <!-- AWS Costs Control Tab -->
+            <div id="aws-costs-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>AWS Costs Control</h2>
+                    <button class="refresh-button" onclick="refreshAWSCosts()" title="Refresh Data">
+                        <span class="refresh-icon">&#x21bb;</span>
+                        Refresh
+                    </button>
+                </div>
+                
+                <!-- AWS Cost Alerts & Recommendations - Moved to Top -->
+                <div class="card" style="margin-bottom: 2rem;">
+                    <h2>AWS Cost Alerts & Recommendations</h2>
+                    <div id="aws-cost-alerts-container">
+                        <div class="alert info">
+                            <div class="loading-spinner"></div>
+                            <strong>Loading:</strong> Fetching AWS cost data from Cost Explorer...
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Top Row: Monthly AWS Cost Indicator and Service Filters -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+                    <!-- Left: Monthly AWS Cost Indicator -->
+                    <div class="metric-card" id="monthly-aws-cost-indicator">
+                        <h3>Monthly AWS Cost (All Services)</h3>
+                        <div class="metric-value" id="aws-total-cost">$0.00</div>
+                        <div class="metric-change" id="aws-cost-change">
+                            <span>→</span> Loading...
+                        </div>
+                        <div class="metric-subtitle" id="aws-cost-subtitle">Loading monthly data...</div>
+                    </div>
+                    
+                    <!-- Right: Service Filters and Controls -->
+                    <div class="card">
+                        <h2>Service Filters & Controls</h2>
+                        <div class="admin-controls">
+                            <div class="blocking-controls">
+                                <h3>Filter AWS Services</h3>
+                                <div class="block-form">
+                                    <select id="service-category-filter" class="form-control" onchange="filterServicesByCategory()">
+                                        <option value="all">All Services</option>
+                                        <option value="compute">Compute (EC2, Lambda, ECS)</option>
+                                        <option value="storage">Storage (S3, EBS, EFS)</option>
+                                        <option value="database">Database (RDS, DynamoDB)</option>
+                                        <option value="networking">Networking (VPC, CloudFront)</option>
+                                        <option value="ai-ml">AI/ML (Bedrock, SageMaker)</option>
+                                        <option value="analytics">Analytics (Athena, Glue)</option>
+                                        <option value="security">Security (IAM, KMS, WAF)</option>
+                                        <option value="management">Management (CloudWatch, Config)</option>
+                                    </select>
+                                    <select id="time-period-filter" class="form-control" onchange="changeTimePeriod()">
+                                        <option value="7d">Last 7 Days</option>
+                                        <option value="30d" selected>Last 30 Days</option>
+                                        <option value="90d">Last 90 Days</option>
+                                        <option value="12m">Last 12 Months</option>
+                                    </select>
+                                    <button onclick="exportAWSCostsData()" class="btn btn-select-user">
+                                        Export Data
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Top Services by Cost -->
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Top AWS Services by Cost - Last 30 Days</h2>
+                    <button class="export-button" onclick="exportTopServicesTable()" title="Export to CSV">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Export
+                    </button>
+                    <table id="top-services-table">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th>Category</th>
+                                <th>Current Month Cost</th>
+                                <th>Previous Month Cost</th>
+                                <th>Change (%)</th>
+                                <th>Trend</th>
+                                <th>% of Total</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8">
+                                    <div class="loading-spinner"></div>
+                                    Loading AWS services cost data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Daily AWS Cost Breakdown -->
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Daily AWS Cost Breakdown - Last 30 Days</h2>
+                    <button class="export-button" onclick="exportDailyCostsTable()" title="Export to CSV">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Export
+                    </button>
+                    <table id="daily-costs-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Total Cost</th>
+                                <th>Compute</th>
+                                <th>Storage</th>
+                                <th>Database</th>
+                                <th>Networking</th>
+                                <th>AI/ML</th>
+                                <th>Other</th>
+                                <th>Daily Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="9">
+                                    <div class="loading-spinner"></div>
+                                    Loading daily cost breakdown...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Cost Optimization Recommendations -->
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Cost Optimization Recommendations</h2>
+                    <button class="export-button" onclick="exportRecommendationsTable()" title="Export to CSV">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Export
+                    </button>
+                    <table id="recommendations-table">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th>Issue Type</th>
+                                <th>Current Cost</th>
+                                <th>Potential Savings</th>
+                                <th>Priority</th>
+                                <th>Recommendation</th>
+                                <th>Implementation</th>
+                                <th>Risk Level</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8">
+                                    <div class="loading-spinner"></div>
+                                    Analyzing cost optimization opportunities...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Charts Section -->
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card">
+                        <h2>AWS Cost Trend - Last 30 Days</h2>
+                        <div class="chart-container">
+                            <canvas id="aws-cost-trend-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Service Cost Distribution</h2>
+                        <div class="chart-container">
+                            <canvas id="aws-service-distribution-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard" style="margin-top: 20px;">
+                    <div class="card">
+                        <h2>Monthly Cost Comparison</h2>
+                        <div class="chart-container">
+                            <canvas id="aws-monthly-comparison-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>Cost per Service Category</h2>
+                        <div class="chart-container">
+                            <canvas id="aws-category-cost-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Budget Alerts and Thresholds -->
+                <div class="card" style="margin-top: 20px; position: relative;">
+                    <h2>Budget Alerts & Thresholds</h2>
+                    <button class="export-button" onclick="exportBudgetAlertsTable()" title="Export to CSV">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Export
+                    </button>
+                    <div class="admin-controls" style="margin-bottom: 2rem;">
+                        <div class="blocking-controls">
+                            <h3>Configure Budget Alerts</h3>
+                            <div class="block-form">
+                                <input type="number" id="monthly-budget" class="form-control" placeholder="Monthly Budget ($)" value="1000">
+                                <input type="number" id="warning-threshold" class="form-control" placeholder="Warning Threshold (%)" value="80">
+                                <input type="number" id="critical-threshold" class="form-control" placeholder="Critical Threshold (%)" value="95">
+                                <button onclick="updateBudgetThresholds()" class="btn btn-select-user">
+                                    Update Thresholds
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <table id="budget-alerts-table">
+                        <thead>
+                            <tr>
+                                <th>Budget Name</th>
+                                <th>Budget Amount</th>
+                                <th>Current Spend</th>
+                                <th>% Used</th>
+                                <th>Remaining</th>
+                                <th>Forecast</th>
+                                <th>Status</th>
+                                <th>Next Alert</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8">
+                                    <div class="loading-spinner"></div>
+                                    Loading budget information...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1524,8 +1776,9 @@
     <script src="js/mysql-data-service.js?v=20250920-1440"></script>
     <script src="js/charts.js?v=20250920-1430"></script>
     <script src="js/blocking.js?v=20250921-1600"></script>
-        <script src="js/cost-analysis-v2.js?v=20250921-1556"></script>
+    <script src="js/cost-analysis-v2.js?v=20250921-1556"></script>
     <script src="js/hourly-analytics.js?v=20250920-1430"></script>
+    <script src="js/aws-costs-control.js?v=20250924-1645"></script>
     <script src="js/dashboard.js?v=20250920-1445"></script>
     
     <!-- Cost Integration Test (Development Only) -->
