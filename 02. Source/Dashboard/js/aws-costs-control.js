@@ -142,47 +142,32 @@ async function refreshAWSCosts() {
     }
 }
 
-// Load AWS cost data from Cost Explorer API
+// Load AWS cost data from Cost Explorer API (using same method as Cost Analysis)
 async function loadAWSCostData() {
-    console.log('💰 Loading AWS cost data...');
+    console.log('💰 Loading AWS cost data using Cost Analysis method...');
     
     try {
-        // Check if AWS SDK is available and configured
-        if (typeof AWS !== 'undefined' && AWS.config && AWS.config.credentials) {
-            // Use Cost Explorer API to get comprehensive cost data
-            const costExplorer = new AWS.CostExplorer({ region: 'us-east-1' });
-            
-            // Calculate date range based on current time period
-            const { startDate, endDate } = getDateRangeForPeriod(currentTimePeriod);
-            
-            console.log(`📅 Fetching cost data from ${startDate} to ${endDate}`);
-            
-            // Get cost data grouped by service
-            const costParams = {
-                TimePeriod: {
-                    Start: startDate,
-                    End: endDate
-                },
-                Granularity: 'DAILY',
-                Metrics: ['BlendedCost', 'UsageQuantity'],
-                GroupBy: [
-                    { Type: 'DIMENSION', Key: 'SERVICE' }
-                ]
-            };
-            
-            const costData = await costExplorer.getCostAndUsage(costParams).promise();
-            console.log('✅ Raw AWS cost data received:', costData);
-            
-            // Process the cost data
-            awsCostData = processCostExplorerData(costData);
-            
-            // Get service list for filtering
-            await loadAWSServicesData();
-            
-            console.log('📊 Processed AWS cost data:', awsCostData);
-        } else {
-            throw new Error('AWS SDK not configured');
+        // Check if connected to AWS (using same check as Cost Analysis)
+        if (!isConnectedToAWS) {
+            throw new Error('Dashboard not connected to AWS - check credentials and role permissions');
         }
+        
+        console.log('✅ AWS connection confirmed. Fetching real cost data from Cost Explorer...');
+        
+        // Use the same fetchRealAWSCostData function from Cost Analysis
+        const costData = await fetchRealAWSCostDataForAWSCosts();
+        console.log('✅ Successfully fetched real AWS cost data:', costData);
+        
+        // Process the data into the format expected by AWS Costs Control
+        awsCostData = processAWSCostDataForControl(costData);
+        
+        // Get service list for filtering
+        awsServicesData = Object.keys(costData).map(service => ({
+            name: service,
+            category: categorizeService(service)
+        }));
+        
+        console.log('📊 Processed AWS cost data for AWS Costs Control:', awsCostData);
         
     } catch (error) {
         console.error('❌ Error loading AWS cost data:', error);
@@ -225,44 +210,171 @@ async function loadAWSServicesData() {
     }
 }
 
-// Process Cost Explorer API response
-function processCostExplorerData(costData) {
+// Fetch real AWS cost data using the same method as Cost Analysis
+async function fetchRealAWSCostDataForAWSCosts() {
+    if (!isConnectedToAWS) {
+        throw new Error('Not connected to AWS');
+    }
+    
+    console.log('🌍 Note: Cost Explorer API is only available in us-east-1 (AWS limitation)');
+    console.log('📊 However, it aggregates cost data from ALL regions including eu-west-1');
+    
+    // Try Cost Explorer with user credentials first (same as Cost Analysis)
+    console.log('🔑 Attempting Cost Explorer access with user credentials...');
+    try {
+        // Create Cost Explorer client with original user credentials
+        const userCredentials = new AWS.Credentials({
+            accessKeyId: currentUserAccessKey,
+            secretAccessKey: sessionStorage.getItem('aws_secret_key')
+        });
+        
+        const costExplorerWithUserCreds = new AWS.CostExplorer({ 
+            region: 'us-east-1',
+            credentials: userCredentials
+        });
+        
+        console.log('✅ Trying Cost Explorer with user credentials...');
+        return await fetchCostExplorerDataForAWSCosts(costExplorerWithUserCreds);
+        
+    } catch (userCredsError) {
+        console.warn('❌ Cost Explorer with user credentials failed:', userCredsError.message);
+        console.log('🔄 Trying Cost Explorer with assumed role credentials...');
+        
+        // Try with assumed role credentials (current approach)
+        try {
+            const costExplorer = new AWS.CostExplorer({ region: 'us-east-1' }); // Uses current AWS.config
+            return await fetchCostExplorerDataForAWSCosts(costExplorer);
+        } catch (roleCredsError) {
+            console.warn('❌ Cost Explorer with role credentials also failed:', roleCredsError.message);
+            throw new Error('Failed to access Cost Explorer API: ' + roleCredsError.message);
+        }
+    }
+}
+
+// Fetch Cost Explorer data for AWS Costs Control
+async function fetchCostExplorerDataForAWSCosts(costExplorer) {
+    // Calculate date range based on current time period
+    const { startDate, endDate } = getDateRangeForPeriod(currentTimePeriod);
+    
+    console.log(`Fetching AWS cost data from ${startDate} to ${endDate}`);
+    
+    try {
+        // Enhanced query to capture all AWS costs (not just Bedrock)
+        const params = {
+            TimePeriod: {
+                Start: startDate,
+                End: endDate
+            },
+            Granularity: 'DAILY',
+            Metrics: ['BlendedCost', 'UnblendedCost', 'UsageQuantity'],
+            GroupBy: [
+                {
+                    Type: 'DIMENSION',
+                    Key: 'SERVICE'
+                }
+            ]
+            // No filter - get all AWS services for comprehensive cost control
+        };
+        
+        console.log('Cost Explorer query parameters:', JSON.stringify(params, null, 2));
+        console.log('🌍 Note: Cost Explorer aggregates data from ALL regions globally');
+        
+        const costData = await costExplorer.getCostAndUsage(params).promise();
+        console.log('Raw AWS Cost Explorer response:', JSON.stringify(costData, null, 2));
+        
+        return processCostExplorerDataForAWSCosts(costData);
+        
+    } catch (error) {
+        console.error('Error fetching cost data from AWS Cost Explorer:', error);
+        throw error;
+    }
+}
+
+// Process Cost Explorer data for AWS Costs Control format
+function processCostExplorerDataForAWSCosts(costData) {
+    const processedData = {};
+    
+    if (costData.ResultsByTime && costData.ResultsByTime.length > 0) {
+        costData.ResultsByTime.forEach((timeResult, dayIndex) => {
+            const date = timeResult.TimePeriod.Start;
+            console.log(`Processing cost data for date: ${date}`);
+            
+            if (timeResult.Groups && timeResult.Groups.length > 0) {
+                timeResult.Groups.forEach(group => {
+                    const serviceName = group.Keys[0]; // SERVICE
+                    const cost = parseFloat(group.Metrics.BlendedCost.Amount) || 0;
+                    
+                    console.log(`Service: ${serviceName}, Cost: $${cost}`);
+                    
+                    // Initialize service array if it doesn't exist
+                    if (!processedData[serviceName]) {
+                        processedData[serviceName] = Array(Math.max(30, costData.ResultsByTime.length)).fill(0);
+                    }
+                    
+                    // Add cost to the appropriate day index
+                    if (dayIndex < processedData[serviceName].length) {
+                        processedData[serviceName][dayIndex] = cost;
+                    }
+                });
+            }
+        });
+    }
+    
+    console.log('Processed AWS cost data (using actual service names from API):', processedData);
+    return processedData;
+}
+
+// Process AWS cost data into the format expected by AWS Costs Control
+function processAWSCostDataForControl(costData) {
     const processedData = {
         dailyCosts: {},
         serviceCosts: {},
         totalCost: 0
     };
     
-    if (costData.ResultsByTime && costData.ResultsByTime.length > 0) {
-        costData.ResultsByTime.forEach(timeResult => {
-            const date = timeResult.TimePeriod.Start;
-            let dailyTotal = 0;
-            
-            if (timeResult.Groups && timeResult.Groups.length > 0) {
-                timeResult.Groups.forEach(group => {
-                    const serviceName = group.Keys[0];
-                    const cost = parseFloat(group.Metrics.BlendedCost.Amount) || 0;
-                    
-                    // Add to daily costs
-                    if (!processedData.dailyCosts[date]) {
-                        processedData.dailyCosts[date] = {};
-                    }
-                    processedData.dailyCosts[date][serviceName] = cost;
-                    dailyTotal += cost;
-                    
-                    // Add to service costs
-                    if (!processedData.serviceCosts[serviceName]) {
-                        processedData.serviceCosts[serviceName] = 0;
-                    }
-                    processedData.serviceCosts[serviceName] += cost;
-                });
-            }
-            
-            processedData.dailyCosts[date].total = dailyTotal;
-            processedData.totalCost += dailyTotal;
-        });
+    // Get the number of days from the cost data
+    const services = Object.keys(costData);
+    if (services.length === 0) {
+        return processedData;
     }
     
+    const numDays = costData[services[0]].length;
+    
+    // Process each day - FIXED: Start from yesterday, not today
+    // AWS Cost Explorer data has a delay and doesn't include current day
+    for (let dayIndex = 0; dayIndex < numDays; dayIndex++) {
+        // Create date string for this day - start from yesterday (day -1) and go backwards
+        const date = new Date();
+        date.setDate(date.getDate() - 1 - (numDays - 1 - dayIndex)); // Start from yesterday
+        const dateStr = date.toISOString().split('T')[0];
+        
+        console.log(`📅 Processing day index ${dayIndex} -> date ${dateStr} (${numDays - 1 - dayIndex + 1} days ago)`);
+        
+        processedData.dailyCosts[dateStr] = {};
+        let dailyTotal = 0;
+        
+        // Process each service for this day
+        services.forEach(serviceName => {
+            const cost = costData[serviceName][dayIndex] || 0;
+            
+            // Add to daily costs
+            processedData.dailyCosts[dateStr][serviceName] = cost;
+            dailyTotal += cost;
+            
+            // Add to service costs
+            if (!processedData.serviceCosts[serviceName]) {
+                processedData.serviceCosts[serviceName] = 0;
+            }
+            processedData.serviceCosts[serviceName] += cost;
+        });
+        
+        processedData.dailyCosts[dateStr].total = dailyTotal;
+        processedData.totalCost += dailyTotal;
+        
+        console.log(`💰 Date ${dateStr}: $${dailyTotal.toFixed(2)} total cost`);
+    }
+    
+    console.log('📊 Final processed data structure:', processedData);
     return processedData;
 }
 
@@ -439,8 +551,23 @@ function loadDailyCostsData() {
     
     tableBody.innerHTML = '';
     
-    // Get sorted dates
-    const sortedDates = Object.keys(awsCostData.dailyCosts || {}).sort().reverse().slice(0, 30);
+    console.log('📊 Loading daily costs data...');
+    console.log('awsCostData structure:', awsCostData);
+    
+    // Check if we have the expected data structure
+    if (!awsCostData.dailyCosts || Object.keys(awsCostData.dailyCosts).length === 0) {
+        console.warn('⚠️ No daily costs data available in awsCostData.dailyCosts');
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="9">No daily cost data available</td>
+            </tr>
+        `;
+        return;
+    }
+    
+    // Get sorted dates (most recent first) and limit to 30 days
+    const sortedDates = Object.keys(awsCostData.dailyCosts).sort().reverse().slice(0, 30);
+    console.log('📅 Sorted dates for daily costs table:', sortedDates);
     
     if (sortedDates.length === 0) {
         tableBody.innerHTML = `
@@ -453,17 +580,28 @@ function loadDailyCostsData() {
     
     sortedDates.forEach((date, index) => {
         const dailyData = awsCostData.dailyCosts[date];
+        console.log(`📊 Processing date ${date}:`, dailyData);
+        
+        if (!dailyData) {
+            console.warn(`⚠️ No data for date ${date}`);
+            return;
+        }
+        
         const totalCost = dailyData.total || 0;
+        console.log(`💰 Total cost for ${date}: $${totalCost.toFixed(2)}`);
         
         // Calculate category costs
         const categoryCosts = calculateCategoryCosts(dailyData);
+        console.log(`📊 Category costs for ${date}:`, categoryCosts);
         
-        // Calculate daily change
+        // Calculate daily change (compare with previous day in chronological order)
         let dailyChange = 0;
         if (index < sortedDates.length - 1) {
             const previousDate = sortedDates[index + 1];
             const previousTotal = awsCostData.dailyCosts[previousDate]?.total || 0;
-            dailyChange = ((totalCost - previousTotal) / previousTotal * 100);
+            if (previousTotal > 0) {
+                dailyChange = ((totalCost - previousTotal) / previousTotal * 100);
+            }
         }
         
         const changeSymbol = dailyChange >= 0 ? '↗' : '↘';
@@ -483,6 +621,8 @@ function loadDailyCostsData() {
             </tr>
         `;
     });
+    
+    console.log('✅ Daily costs table loaded successfully');
 }
 
 // Calculate category costs for a given day
@@ -1065,11 +1205,16 @@ function generateSampleAWSCostData() {
         totalCost: 0
     };
     
-    // Generate 30 days of sample data
-    for (let i = 29; i >= 0; i--) {
+    console.log('📊 Generating sample AWS cost data - starting from yesterday (AWS cost data delay)');
+    
+    // Generate 30 days of sample data - FIXED: Start from yesterday, not today
+    // AWS Cost Explorer data has a delay and doesn't include current day
+    for (let i = 30; i >= 1; i--) { // Changed: i=30 to i=1 (30 days ago to yesterday)
         const date = new Date();
-        date.setDate(date.getDate() - i);
+        date.setDate(date.getDate() - i); // This now goes from yesterday (i=1) back to 30 days ago (i=30)
         const dateStr = date.toISOString().split('T')[0];
+        
+        console.log(`📅 Generating sample data for ${dateStr} (${i} days ago)`);
         
         sampleData.dailyCosts[dateStr] = {};
         let dailyTotal = 0;
@@ -1087,8 +1232,12 @@ function generateSampleAWSCostData() {
         
         sampleData.dailyCosts[dateStr].total = dailyTotal;
         sampleData.totalCost += dailyTotal;
+        
+        console.log(`💰 Sample data for ${dateStr}: $${dailyTotal.toFixed(2)}`);
     }
     
+    console.log('✅ Sample AWS cost data generated - 30 days from yesterday backwards');
+    console.log('📊 Sample data structure:', sampleData);
     return sampleData;
 }
 

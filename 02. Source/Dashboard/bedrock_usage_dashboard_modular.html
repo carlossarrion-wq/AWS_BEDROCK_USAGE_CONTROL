@@ -947,6 +947,23 @@
                         </svg>
                         Export
                     </button>
+                    
+                    <!-- Pagination Controls for User Usage Details -->
+                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div class="pagination-info">
+                            <span id="user-usage-info">Showing 0-0 of 0 users</span>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button id="prev-user-usage-btn" class="btn" style="margin-right: 5px;" onclick="loadPreviousUserUsagePage()" disabled>
+                                ←
+                            </button>
+                            <span id="user-usage-page-info">Page 1</span>
+                            <button id="next-user-usage-btn" class="btn" style="margin-left: 5px;" onclick="loadNextUserUsagePage()" disabled>
+                                →
+                            </button>
+                        </div>
+                    </div>
+                    
                     <table id="user-usage-table">
                         <thead>
                             <tr>
@@ -1116,6 +1133,23 @@
                             </svg>
                             Export
                         </button>
+                        
+                        <!-- Pagination Controls for Users in Team -->
+                        <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                            <div class="pagination-info">
+                                <span id="team-users-info">Showing 0-0 of 0 users</span>
+                            </div>
+                            <div class="pagination-buttons">
+                                <button id="prev-team-users-btn" class="btn" style="margin-right: 5px;" onclick="loadPreviousTeamUsersPage()" disabled>
+                                    ←
+                                </button>
+                                <span id="team-users-page-info">Page 1</span>
+                                <button id="next-team-users-btn" class="btn" style="margin-left: 5px;" onclick="loadNextTeamUsersPage()" disabled>
+                                    →
+                                </button>
+                            </div>
+                        </div>
+                        
                         <table id="team-users-table">
                             <thead>
                                 <tr>
@@ -1173,6 +1207,23 @@
                         </svg>
                         Export
                     </button>
+                    
+                    <!-- Pagination Controls for User Consumption - Last 10 Days -->
+                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div class="pagination-info">
+                            <span id="consumption-details-info">Showing 0-0 of 0 users</span>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button id="prev-consumption-details-btn" class="btn" style="margin-right: 5px;" onclick="loadPreviousConsumptionDetailsPage()" disabled>
+                                ←
+                            </button>
+                            <span id="consumption-details-page-info">Page 1</span>
+                            <button id="next-consumption-details-btn" class="btn" style="margin-left: 5px;" onclick="loadNextConsumptionDetailsPage()" disabled>
+                                →
+                            </button>
+                        </div>
+                    </div>
+                    
                     <table id="consumption-details-table">
                         <thead>
                             <tr>
@@ -1447,6 +1498,22 @@
                                     Select user
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pagination Controls for Current User Status & Manual Blocking -->
+                    <div class="pagination-controls" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div class="pagination-info">
+                            <span id="blocking-status-info">Showing 0-0 of 0 users</span>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button id="prev-blocking-status-btn" class="btn" style="margin-right: 5px;" onclick="loadPreviousBlockingStatusPage()" disabled>
+                                ←
+                            </button>
+                            <span id="blocking-status-page-info">Page 1</span>
+                            <button id="next-blocking-status-btn" class="btn" style="margin-left: 5px;" onclick="loadNextBlockingStatusPage()" disabled>
+                                →
+                            </button>
                         </div>
                     </div>
                     
