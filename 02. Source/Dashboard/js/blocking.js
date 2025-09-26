@@ -24,17 +24,14 @@ async function loadBlockingData() {
 }
 
 async function loadUserBlockingStatus() {
-    const statusTableBody = document.querySelector('#user-blocking-status-table tbody');
-    statusTableBody.innerHTML = '';
-    
     // Populate user select dropdown
     const userSelect = document.getElementById('user-select');
     userSelect.innerHTML = '<option value="">Select User...</option>';
     
-        // Use real user data from user_limits table
-        const sortedUsers = [...allUsers].sort();
-        
-        for (const username of sortedUsers) {
+    // Use real user data from user_limits table
+    const sortedUsers = [...allUsers].sort();
+    
+    for (const username of sortedUsers) {
             // FIXED: Get person and team from user_limits table instead of userTags
             let personTag = "Unknown";
             let userTeam = "Unknown";
@@ -86,202 +83,18 @@ async function loadUserBlockingStatus() {
         
         // Add to select dropdown
         userSelect.innerHTML += `<option value="${username}">${username} - ${personTag}</option>`;
-        
-        // Get blocking status from Lambda function
-        let isBlocked = false;
-        let blockType = 'None';
-        let blockedSince = '-';
-        let expires = '-';
-        let hasAdminProtection = false;
-        
-        try {
-            // Check blocking status from MySQL database
-            if (window.mysqlDataService) {
-                const statusQuery = `
-                    SELECT is_blocked, blocked_reason, blocked_at, blocked_until
-                    FROM bedrock_usage.user_blocking_status 
-                    WHERE user_id = ?
-                `;
-                
-                const statusResult = await window.mysqlDataService.executeQuery(statusQuery, [username]);
-                if (statusResult.length > 0) {
-                    const status = statusResult[0];
-                    isBlocked = status.is_blocked === 'Y';
-                    blockType = isBlocked ? 'Database Block' : 'None';
-                    
-                    // Format blocked_at date with seconds
-                    if (status.blocked_at) {
-                        blockedSince = formatDateTime(status.blocked_at, true);
-                    } else {
-                        blockedSince = '-';
-                    }
-                    
-                    // Format blocked_until date with seconds
-                    if (status.blocked_until) {
-                        expires = formatDateTime(status.blocked_until, true);
-                    } else {
-                        expires = 'Indefinite';
-                    }
-                }
-            }
-        } catch (error) {
-            console.error(`Error getting status for user ${username}:`, error);
-            // Continue with default values
-        }
-        
-        // Check for administrative protection by querying MySQL database
-        try {
-            if (window.mysqlDataService) {
-                const adminQuery = `
-                    SELECT administrative_safe 
-                    FROM bedrock_usage.user_limits 
-                    WHERE user_id = ?
-                `;
-                
-                const result = await window.mysqlDataService.executeQuery(adminQuery, [username]);
-                if (result.length > 0 && result[0].administrative_safe === 'Y') {
-                    hasAdminProtection = true;
-                    console.log(`User ${username} has administrative protection`);
-                }
-            }
-        } catch (error) {
-            console.error(`Error checking admin protection for user ${username}:`, error);
-            // Continue without admin protection info
-        }
-        
-        // Store blocking status for dynamic button
-        userBlockingStatus[username] = isBlocked;
-        
-        // FIXED: Get daily limit from database instead of quota_config.json
-        let dailyLimit = 350; // Default fallback
-        try {
-            if (window.mysqlDataService) {
-                const limitsQuery = `
-                    SELECT daily_request_limit 
-                    FROM bedrock_usage.user_limits 
-                    WHERE user_id = ?
-                `;
-                const limitsResult = await window.mysqlDataService.executeQuery(limitsQuery, [username]);
-                if (limitsResult.length > 0) {
-                    dailyLimit = limitsResult[0].daily_request_limit || 350;
-                    console.log(`📊 FIXED: User ${username} daily limit from database: ${dailyLimit}`);
-                } else {
-                    console.log(`⚠️ No database record found for user ${username}, using default limit: ${dailyLimit}`);
-                }
-            }
-        } catch (error) {
-            console.error(`Error fetching daily limit for user ${username}:`, error);
-            // FIXED: Use default limit only, no fallback to quota config
-            dailyLimit = 350;
-        }
-        
-        // FIXED: Use same data source and mapping as Daily Usage tab
-        // Daily Usage tab uses: fullDailyData[10] for today's usage
-        const fullDailyData = userMetrics[username]?.daily || Array(11).fill(0);
-        const dailyUsage = fullDailyData[10] || 0; // Index 10 is today (same as Daily Usage tab)
-        const dailyPercentage = Math.round((dailyUsage / dailyLimit) * 100);
-        
-        // Use default thresholds since we're now getting limits from database
-        let dailyColorClass = '';
-        if (dailyPercentage > 85) { // critical_threshold
-            dailyColorClass = 'critical';
-        } else if (dailyPercentage > 60) { // warning_threshold
-            dailyColorClass = 'warning';
-        }
-        
-        // Determine if it's an admin block by checking the blocking audit log
-        let isAdminBlock = false;
-        if (isBlocked) {
-            try {
-                if (window.mysqlDataService) {
-                    const auditQuery = `
-                        SELECT performed_by, operation_reason 
-                        FROM bedrock_usage.blocking_audit_log 
-                        WHERE user_id = ? AND operation_type IN ('BLOCK', 'AUTO_BLOCK', 'ADMIN_BLOCK')
-                        ORDER BY operation_timestamp DESC 
-                        LIMIT 1
-                    `;
-                    
-                    const auditResult = await window.mysqlDataService.executeQuery(auditQuery, [username]);
-                    if (auditResult.length > 0) {
-                        const performedBy = auditResult[0].performed_by;
-                        // Check if it's an admin block: performed_by is not 'system'
-                        isAdminBlock = performedBy && performedBy !== 'system';
-                    }
-                }
-            } catch (error) {
-                console.error(`Error checking admin block status for ${username}:`, error);
-                // Fallback: assume regular block if we can't determine
-                isAdminBlock = false;
-            }
-        }
-        
-        // Generate status badge based on your requirements:
-        // ACTIVE (soft green) - active users without administrative privileges
-        // ACTIVE_ADM (soft green) - active users with administrative privileges  
-        // BLOCKED (soft red) - blocked users without administrative privileges
-        // BLOCKED_ADM (soft red) - blocked users with administrative privileges
-        
-        let statusBadge;
-        let rowClass = '';
-        
-        if (isBlocked) {
-            if (hasAdminProtection || isAdminBlock) {
-                statusBadge = `
-                    <span class="status-badge blocked-adm">
-                        BLOCKED_ADM
-                    </span>
-                `;
-            } else {
-                statusBadge = `
-                    <span class="status-badge blocked">
-                        BLOCKED
-                    </span>
-                `;
-            }
-            rowClass = 'blocked-user';
-        } else {
-            if (hasAdminProtection) {
-                statusBadge = `
-                    <span class="status-badge active-adm">
-                        ACTIVE_ADM
-                    </span>
-                `;
-            } else {
-                statusBadge = `
-                    <span class="status-badge active">
-                        ACTIVE
-                    </span>
-                `;
-            }
-            rowClass = '';
-        }
-        
-        statusTableBody.innerHTML += `
-            <tr class="${rowClass}">
-                <td>${username}</td>
-                <td>${personTag}</td>
-                <td>${userTeam}</td>
-                <td>${statusBadge}</td>
-                <td>${dailyUsage}</td>
-                <td>${dailyLimit}</td>
-                <td>
-                    <div class="progress-bar">
-                        <div class="progress-bar-fill ${dailyColorClass}" style="width: ${dailyPercentage}%"></div>
-                    </div>
-                    ${dailyPercentage}%
-                </td>
-                <td>${blockType}</td>
-                <td>${blockedSince}</td>
-                <td>${expires}</td>
-            </tr>
-        `;
     }
     
-    if (allUsers.length === 0) {
+    // Use the pagination function from dashboard.js instead of rendering all users
+    if (window.loadUserBlockingDataWithPagination) {
+        console.log('📊 FIXED: Using pagination function for user blocking table');
+        await window.loadUserBlockingDataWithPagination();
+    } else {
+        console.error('❌ Pagination function not available, showing error message');
+        const statusTableBody = document.querySelector('#user-blocking-status-table tbody');
         statusTableBody.innerHTML = `
             <tr>
-                <td colspan="10">No users found</td>
+                <td colspan="10">Error: Pagination function not available</td>
             </tr>
         `;
     }

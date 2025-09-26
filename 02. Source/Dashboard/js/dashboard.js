@@ -44,6 +44,36 @@ let operationsCurrentPage = 1;
 let operationsTotalCount = 0;
 let allOperations = [];
 
+// User Usage Details pagination variables
+let userUsageCurrentPage = 1;
+let userUsagePageSize = 10;
+let userUsageTotalCount = 0;
+let allUserUsageData = [];
+
+// Team Users pagination variables
+let teamUsersCurrentPage = 1;
+let teamUsersPageSize = 10;
+let teamUsersTotalCount = 0;
+let allTeamUsersData = [];
+
+// Consumption Details pagination variables
+let consumptionDetailsCurrentPage = 1;
+let consumptionDetailsPageSize = 10;
+let consumptionDetailsTotalCount = 0;
+let allConsumptionDetailsData = [];
+
+// Blocking Status pagination variables
+let blockingStatusCurrentPage = 1;
+let blockingStatusPageSize = 10;
+let blockingStatusTotalCount = 0;
+let allBlockingStatusData = [];
+
+// User Blocking Management pagination variables
+let userBlockingCurrentPage = 1;
+let userBlockingPageSize = 10;
+let userBlockingTotalCount = 0;
+let allUserBlockingData = [];
+
 // Initialize dashboard when page loads
 document.addEventListener('DOMContentLoaded', function() {
     initializeBlockingControls();
@@ -395,7 +425,7 @@ async function loadDashboardData() {
         // Load all dashboard sections
         loadUserMonthlyData();
         loadUserDailyData();
-        loadUserUsageDetails();
+        loadUserUsageDetailsWithPagination(); // Use pagination version
         loadAccessMethodData();
         loadTeamMonthlyData();
         loadTeamDailyData();
@@ -1424,11 +1454,11 @@ function updateTeamAlerts() {
     }
 }
 
-function loadTeamUsersData() {
-    const tableBody = document.querySelector('#team-users-table tbody');
-    tableBody.innerHTML = '';
+// Team Users Pagination Functions
+async function prepareTeamUsersDataForPagination() {
+    console.log('📊 Preparing team users data for pagination...');
     
-    let allTeamUsers = [];
+    allTeamUsersData = [];
     
     // Use dynamic teams instead of hardcoded ALL_TEAMS
     const dynamicTeams = window.ALL_TEAMS || ALL_TEAMS;
@@ -1442,7 +1472,7 @@ function loadTeamUsersData() {
             const userRequests = userMetrics[username]?.monthly || 0;
             const percentage = teamTotal > 0 ? Math.round((userRequests / teamTotal) * 100) : 0;
             
-            allTeamUsers.push({
+            allTeamUsersData.push({
                 username,
                 personTag: getUserPersonTag(username) || "Unknown",
                 team,
@@ -1452,9 +1482,38 @@ function loadTeamUsersData() {
         });
     });
     
-    allTeamUsers.sort((a, b) => b.userRequests - a.userRequests);
+    // Sort by usage (highest to lowest)
+    allTeamUsersData.sort((a, b) => b.userRequests - a.userRequests);
     
-    allTeamUsers.forEach(user => {
+    teamUsersTotalCount = allTeamUsersData.length;
+    console.log('📊 Prepared', teamUsersTotalCount, 'team users for pagination');
+}
+
+function renderTeamUsersPage() {
+    console.log('📊 Rendering team users page', teamUsersCurrentPage, 'with page size', teamUsersPageSize);
+    
+    const tableBody = document.querySelector('#team-users-table tbody');
+    tableBody.innerHTML = '';
+    
+    if (allTeamUsersData.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="5">No users found in any team</td>
+            </tr>
+        `;
+        updateTeamUsersPaginationInfo();
+        return;
+    }
+    
+    // Calculate start and end indices
+    const startIndex = (teamUsersCurrentPage - 1) * teamUsersPageSize;
+    const endIndex = Math.min(startIndex + teamUsersPageSize, teamUsersTotalCount);
+    
+    // Get the data for current page
+    const pageData = allTeamUsersData.slice(startIndex, endIndex);
+    
+    // Render the rows
+    pageData.forEach(user => {
         tableBody.innerHTML += `
             <tr>
                 <td>${user.username}</td>
@@ -1466,13 +1525,89 @@ function loadTeamUsersData() {
         `;
     });
     
-    if (allUsers.length === 0) {
+    // Update pagination info
+    updateTeamUsersPaginationInfo();
+    
+    console.log('📊 Rendered', pageData.length, 'team users on page', teamUsersCurrentPage);
+}
+
+function updateTeamUsersPaginationInfo() {
+    const startIndex = (teamUsersCurrentPage - 1) * teamUsersPageSize;
+    const endIndex = Math.min(startIndex + teamUsersPageSize, teamUsersTotalCount);
+    const totalPages = Math.ceil(teamUsersTotalCount / teamUsersPageSize);
+    
+    // Update info text
+    const infoElement = document.getElementById('team-users-info');
+    if (infoElement) {
+        infoElement.textContent = `Showing ${startIndex + 1}-${endIndex} of ${teamUsersTotalCount} users`;
+    }
+    
+    // Update page info
+    const pageInfoElement = document.getElementById('team-users-page-info');
+    if (pageInfoElement) {
+        pageInfoElement.textContent = `Page ${teamUsersCurrentPage} of ${totalPages}`;
+    }
+    
+    // Update button states
+    const prevButton = document.getElementById('prev-team-users-btn');
+    const nextButton = document.getElementById('next-team-users-btn');
+    
+    if (prevButton) {
+        prevButton.disabled = teamUsersCurrentPage <= 1;
+    }
+    
+    if (nextButton) {
+        nextButton.disabled = teamUsersCurrentPage >= totalPages;
+    }
+}
+
+async function loadTeamUsersDataWithPagination() {
+    console.log('📊 Loading team users data with pagination...');
+    
+    try {
+        // Prepare all data
+        await prepareTeamUsersDataForPagination();
+        
+        // Reset to first page
+        teamUsersCurrentPage = 1;
+        
+        // Render first page
+        renderTeamUsersPage();
+        
+        console.log('✅ Team users data loaded with pagination');
+        
+    } catch (error) {
+        console.error('❌ Error loading team users data with pagination:', error);
+        
+        const tableBody = document.querySelector('#team-users-table tbody');
         tableBody.innerHTML = `
             <tr>
-                <td colspan="5">No users found in any team</td>
+                <td colspan="5">Error loading team users data: ${error.message}</td>
             </tr>
         `;
     }
+}
+
+function loadPreviousTeamUsersPage() {
+    if (teamUsersCurrentPage > 1) {
+        teamUsersCurrentPage--;
+        renderTeamUsersPage();
+        console.log('📊 Loaded previous team users page:', teamUsersCurrentPage);
+    }
+}
+
+function loadNextTeamUsersPage() {
+    const totalPages = Math.ceil(teamUsersTotalCount / teamUsersPageSize);
+    if (teamUsersCurrentPage < totalPages) {
+        teamUsersCurrentPage++;
+        renderTeamUsersPage();
+        console.log('📊 Loaded next team users page:', teamUsersCurrentPage);
+    }
+}
+
+// Legacy function for backward compatibility - now calls paginated version
+function loadTeamUsersData() {
+    loadTeamUsersDataWithPagination();
 }
 
 function loadModelDistributionData() {
@@ -1612,82 +1747,9 @@ async function loadUserModelDistributionData() {
     }
 }
 
+// Legacy function for backward compatibility - now calls paginated version
 function loadConsumptionDetailsData() {
-    const tableBody = document.querySelector('#consumption-details-table tbody');
-    tableBody.innerHTML = '';
-    
-    updateConsumptionDetailsHeaders();
-    
-    const sortedUsers = [...allUsers].sort();
-    
-    // Array to store daily totals
-    const dailyTotals = Array(10).fill(0);
-    
-    sortedUsers.forEach(username => {
-        const personTag = getUserPersonTag(username) || "Unknown";
-        
-        let userTeam = "Unknown";
-        for (const team in usersByTeam) {
-            if (usersByTeam[team].includes(username)) {
-                userTeam = team;
-                break;
-            }
-        }
-        
-        // FIXED: Get the full 11-element array from MySQL (same as charts)
-        const fullDailyData = userMetrics[username]?.daily || Array(11).fill(0);
-        
-        let rowHtml = `
-            <tr>
-                <td>${username}</td>
-                <td>${personTag}</td>
-                <td>${userTeam}</td>
-        `;
-        
-        for (let i = 0; i < 10; i++) {
-            // FIXED: Map table columns to correct MySQL array indices
-            // Table columns 0-9 should map to MySQL indices 1-10 (day-9 through today)
-            // This matches the chart mapping: slice(1, 11)
-            const dataIndex = i + 1; // Map column 0 to MySQL index 1, column 9 to MySQL index 10
-            
-            const consumption = fullDailyData[dataIndex] || 0;
-            rowHtml += `<td>${consumption}</td>`;
-            
-            // Add to daily totals
-            dailyTotals[i] += consumption;
-        }
-        
-        rowHtml += '</tr>';
-        tableBody.innerHTML += rowHtml;
-    });
-    
-    // Add totals row
-    if (allUsers.length > 0) {
-        let totalsRowHtml = `
-            <tr style="border-top: 2px solid #1e4a72; background-color: #f8f9fa;">
-                <td style="font-weight: bold;">TOTAL</td>
-                <td style="font-weight: bold;">-</td>
-                <td style="font-weight: bold;">-</td>
-        `;
-        
-        for (let i = 0; i < 10; i++) {
-            totalsRowHtml += `<td style="font-weight: bold;">${dailyTotals[i]}</td>`;
-        }
-        
-        totalsRowHtml += '</tr>';
-        tableBody.innerHTML += totalsRowHtml;
-    }
-    
-    if (allUsers.length === 0) {
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="13">No users found</td>
-            </tr>
-        `;
-    }
-    
-    // Update the consumption details chart
-    updateConsumptionDetailsChart(dailyTotals);
+    loadConsumptionDetailsDataWithPagination();
 }
 
 function updateConsumptionDetailsChart(dailyTotals) {
@@ -2622,6 +2684,728 @@ function processCloudWatchBillingData(billingData) {
     console.log('Processed CloudWatch billing data:', processedData);
     return processedData;
 }
+
+// User Usage Details Pagination Functions
+async function prepareUserUsageDataForPagination() {
+    console.log('📊 Preparing user usage data for pagination...');
+    
+    const sortedUsers = [...allUsers].sort((a, b) => a.localeCompare(b));
+    
+    await updateUserBlockingStatus();
+    
+    // Get user limits from database instead of quota.json
+    let userLimitsFromDB = {};
+    try {
+        const dbLimitsQuery = `
+            SELECT user_id, daily_request_limit, monthly_request_limit
+            FROM bedrock_usage.user_limits
+        `;
+        const dbLimitsResult = await window.mysqlDataService.executeQuery(dbLimitsQuery);
+        
+        // Convert to lookup object
+        dbLimitsResult.forEach(row => {
+            userLimitsFromDB[row.user_id] = {
+                daily_limit: row.daily_request_limit || 350,
+                monthly_limit: row.monthly_request_limit || 5000,
+                warning_threshold: 60,
+                critical_threshold: 85
+            };
+        });
+        
+        console.log('📊 Loaded user limits from database for pagination:', Object.keys(userLimitsFromDB).length, 'users');
+    } catch (error) {
+        console.error('❌ Error loading user limits from database for pagination:', error);
+        userLimitsFromDB = {};
+    }
+    
+    // Prepare all user data
+    allUserUsageData = [];
+    
+    for (const username of sortedUsers) {
+        const personTag = getUserPersonTag(username) || "Unknown";
+        const userTeam = getUserTeamFromDB(username);
+        
+        const userQuota = userLimitsFromDB[username] || { 
+            monthly_limit: 5000, 
+            daily_limit: 350,
+            warning_threshold: 60, 
+            critical_threshold: 85 
+        };
+        
+        const monthlyTotal = userMetrics[username]?.monthly || 0;
+        const monthlyLimit = userQuota.monthly_limit;
+        const monthlyPercentage = Math.round((monthlyTotal / monthlyLimit) * 100);
+        
+        const dailyTotal = userMetrics[username]?.daily?.[10] || 0;
+        const dailyLimit = userQuota.daily_limit;
+        const dailyPercentage = Math.round((dailyTotal / dailyLimit) * 100);
+        
+        // Determine user status and admin privileges
+        let isBlocked = userBlockingStatus && userBlockingStatus[username];
+        let hasAdminPrivileges = false;
+        
+        // Also check userAdminProtection for admin privileges
+        if (userAdminProtection && userAdminProtection[username]) {
+            hasAdminPrivileges = true;
+        }
+        
+        // Generate status badge
+        let statusBadge;
+        if (isBlocked) {
+            if (hasAdminPrivileges) {
+                statusBadge = `
+                    <span class="status-badge blocked-adm" style="cursor: pointer;" onclick="navigateToBlockingTab()">
+                        BLOCKED_ADM
+                    </span>
+                `;
+            } else {
+                statusBadge = `
+                    <span class="status-badge blocked" style="cursor: pointer;" onclick="navigateToBlockingTab()">
+                        BLOCKED
+                    </span>
+                `;
+            }
+        } else {
+            if (hasAdminPrivileges) {
+                statusBadge = `
+                    <span class="status-badge active-adm" style="cursor: pointer;" onclick="navigateToBlockingTab()">
+                        ACTIVE_ADM
+                    </span>
+                `;
+            } else {
+                statusBadge = `
+                    <span class="status-badge active" style="cursor: pointer;" onclick="navigateToBlockingTab()">
+                        ACTIVE
+                    </span>
+                `;
+            }
+        }
+        
+        allUserUsageData.push({
+            username,
+            personTag,
+            userTeam,
+            statusBadge,
+            dailyTotal,
+            dailyLimit,
+            dailyPercentage,
+            monthlyTotal,
+            monthlyLimit,
+            monthlyPercentage
+        });
+    }
+    
+    userUsageTotalCount = allUserUsageData.length;
+    console.log('📊 Prepared', userUsageTotalCount, 'users for pagination');
+}
+
+function renderUserUsagePage() {
+    console.log('📊 Rendering user usage page', userUsageCurrentPage, 'with page size', userUsagePageSize);
+    
+    const tableBody = document.querySelector('#user-usage-table tbody');
+    tableBody.innerHTML = '';
+    
+    // Calculate start and end indices
+    const startIndex = (userUsageCurrentPage - 1) * userUsagePageSize;
+    const endIndex = Math.min(startIndex + userUsagePageSize, userUsageTotalCount);
+    
+    // Get the data for current page
+    const pageData = allUserUsageData.slice(startIndex, endIndex);
+    
+    // Render the rows
+    pageData.forEach(userData => {
+        tableBody.innerHTML += `
+            <tr>
+                <td>${userData.username}</td>
+                <td>${userData.personTag}</td>
+                <td>${userData.userTeam}</td>
+                <td>${userData.statusBadge}</td>
+                <td>${userData.dailyTotal}</td>
+                <td>${userData.dailyLimit}</td>
+                <td>${window.createPercentageIndicator(userData.dailyPercentage)}</td>
+                <td>${userData.monthlyTotal}</td>
+                <td>${userData.monthlyLimit}</td>
+                <td>${window.createPercentageIndicator(userData.monthlyPercentage)}</td>
+            </tr>
+        `;
+    });
+    
+    // Update pagination info
+    updateUserUsagePaginationInfo();
+    
+    console.log('📊 Rendered', pageData.length, 'users on page', userUsageCurrentPage);
+}
+
+function updateUserUsagePaginationInfo() {
+    const startIndex = (userUsageCurrentPage - 1) * userUsagePageSize;
+    const endIndex = Math.min(startIndex + userUsagePageSize, userUsageTotalCount);
+    const totalPages = Math.ceil(userUsageTotalCount / userUsagePageSize);
+    
+    // Update info text
+    const infoElement = document.getElementById('user-usage-info');
+    if (infoElement) {
+        infoElement.textContent = `Showing ${startIndex + 1}-${endIndex} of ${userUsageTotalCount} users`;
+    }
+    
+    // Update page info
+    const pageInfoElement = document.getElementById('user-usage-page-info');
+    if (pageInfoElement) {
+        pageInfoElement.textContent = `Page ${userUsageCurrentPage} of ${totalPages}`;
+    }
+    
+    // Update button states
+    const prevButton = document.getElementById('prev-user-usage-btn');
+    const nextButton = document.getElementById('next-user-usage-btn');
+    
+    if (prevButton) {
+        prevButton.disabled = userUsageCurrentPage <= 1;
+    }
+    
+    if (nextButton) {
+        nextButton.disabled = userUsageCurrentPage >= totalPages;
+    }
+}
+
+async function loadUserUsageDetailsWithPagination() {
+    console.log('📊 Loading user usage details with pagination...');
+    
+    try {
+        // Prepare all data
+        await prepareUserUsageDataForPagination();
+        
+        // Reset to first page
+        userUsageCurrentPage = 1;
+        
+        // Render first page
+        renderUserUsagePage();
+        
+        // Update alerts and metrics
+        updateUserAlerts();
+        await updateUserConsumptionMetrics();
+        
+        console.log('✅ User usage details loaded with pagination');
+        
+    } catch (error) {
+        console.error('❌ Error loading user usage details with pagination:', error);
+        
+        const tableBody = document.querySelector('#user-usage-table tbody');
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="10">Error loading user data: ${error.message}</td>
+            </tr>
+        `;
+    }
+}
+
+function loadPreviousUserUsagePage() {
+    if (userUsageCurrentPage > 1) {
+        userUsageCurrentPage--;
+        renderUserUsagePage();
+        console.log('📊 Loaded previous page:', userUsageCurrentPage);
+    }
+}
+
+function loadNextUserUsagePage() {
+    const totalPages = Math.ceil(userUsageTotalCount / userUsagePageSize);
+    if (userUsageCurrentPage < totalPages) {
+        userUsageCurrentPage++;
+        renderUserUsagePage();
+        console.log('📊 Loaded next page:', userUsageCurrentPage);
+    }
+}
+
+// Consumption Details Pagination Functions
+async function prepareConsumptionDetailsDataForPagination() {
+    console.log('📊 Preparing consumption details data for pagination...');
+    
+    allConsumptionDetailsData = [];
+    
+    const sortedUsers = [...allUsers].sort();
+    
+    sortedUsers.forEach(username => {
+        const personTag = getUserPersonTag(username) || "Unknown";
+        
+        let userTeam = "Unknown";
+        for (const team in usersByTeam) {
+            if (usersByTeam[team].includes(username)) {
+                userTeam = team;
+                break;
+            }
+        }
+        
+        // Get the full 11-element array from MySQL (same as charts)
+        const fullDailyData = userMetrics[username]?.daily || Array(11).fill(0);
+        
+        // Prepare daily consumption data for the last 10 days (indices 1-10)
+        const dailyConsumption = [];
+        for (let i = 0; i < 10; i++) {
+            const dataIndex = i + 1; // Map column 0 to MySQL index 1, column 9 to MySQL index 10
+            dailyConsumption.push(fullDailyData[dataIndex] || 0);
+        }
+        
+        allConsumptionDetailsData.push({
+            username,
+            personTag,
+            userTeam,
+            dailyConsumption
+        });
+    });
+    
+    consumptionDetailsTotalCount = allConsumptionDetailsData.length;
+    console.log('📊 Prepared', consumptionDetailsTotalCount, 'users for consumption details pagination');
+}
+
+function renderConsumptionDetailsPage() {
+    console.log('📊 Rendering consumption details page', consumptionDetailsCurrentPage, 'with page size', consumptionDetailsPageSize);
+    
+    const tableBody = document.querySelector('#consumption-details-table tbody');
+    tableBody.innerHTML = '';
+    
+    if (allConsumptionDetailsData.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="13">No users found</td>
+            </tr>
+        `;
+        updateConsumptionDetailsPaginationInfo();
+        return;
+    }
+    
+    // Calculate start and end indices
+    const startIndex = (consumptionDetailsCurrentPage - 1) * consumptionDetailsPageSize;
+    const endIndex = Math.min(startIndex + consumptionDetailsPageSize, consumptionDetailsTotalCount);
+    
+    // Get the data for current page
+    const pageData = allConsumptionDetailsData.slice(startIndex, endIndex);
+    
+    // Array to store daily totals for the current page
+    const dailyTotals = Array(10).fill(0);
+    
+    // Render the rows
+    pageData.forEach(userData => {
+        let rowHtml = `
+            <tr>
+                <td>${userData.username}</td>
+                <td>${userData.personTag}</td>
+                <td>${userData.userTeam}</td>
+        `;
+        
+        // Add daily consumption data
+        userData.dailyConsumption.forEach((consumption, index) => {
+            rowHtml += `<td>${consumption}</td>`;
+            dailyTotals[index] += consumption;
+        });
+        
+        rowHtml += '</tr>';
+        tableBody.innerHTML += rowHtml;
+    });
+    
+    // Add totals row for current page
+    if (pageData.length > 0) {
+        let totalsRowHtml = `
+            <tr style="border-top: 2px solid #1e4a72; background-color: #f8f9fa;">
+                <td style="font-weight: bold;">PAGE TOTAL</td>
+                <td style="font-weight: bold;">-</td>
+                <td style="font-weight: bold;">-</td>
+        `;
+        
+        for (let i = 0; i < 10; i++) {
+            totalsRowHtml += `<td style="font-weight: bold;">${dailyTotals[i]}</td>`;
+        }
+        
+        totalsRowHtml += '</tr>';
+        tableBody.innerHTML += totalsRowHtml;
+    }
+    
+    // Update pagination info
+    updateConsumptionDetailsPaginationInfo();
+    
+    // Update the consumption details chart with current page totals
+    updateConsumptionDetailsChart(dailyTotals);
+    
+    console.log('📊 Rendered', pageData.length, 'users on consumption details page', consumptionDetailsCurrentPage);
+}
+
+function updateConsumptionDetailsPaginationInfo() {
+    const startIndex = (consumptionDetailsCurrentPage - 1) * consumptionDetailsPageSize;
+    const endIndex = Math.min(startIndex + consumptionDetailsPageSize, consumptionDetailsTotalCount);
+    const totalPages = Math.ceil(consumptionDetailsTotalCount / consumptionDetailsPageSize);
+    
+    // Update info text
+    const infoElement = document.getElementById('consumption-details-info');
+    if (infoElement) {
+        infoElement.textContent = `Showing ${startIndex + 1}-${endIndex} of ${consumptionDetailsTotalCount} users`;
+    }
+    
+    // Update page info
+    const pageInfoElement = document.getElementById('consumption-details-page-info');
+    if (pageInfoElement) {
+        pageInfoElement.textContent = `Page ${consumptionDetailsCurrentPage} of ${totalPages}`;
+    }
+    
+    // Update button states
+    const prevButton = document.getElementById('prev-consumption-details-btn');
+    const nextButton = document.getElementById('next-consumption-details-btn');
+    
+    if (prevButton) {
+        prevButton.disabled = consumptionDetailsCurrentPage <= 1;
+    }
+    
+    if (nextButton) {
+        nextButton.disabled = consumptionDetailsCurrentPage >= totalPages;
+    }
+}
+
+async function loadConsumptionDetailsDataWithPagination() {
+    console.log('📊 Loading consumption details data with pagination...');
+    
+    try {
+        // Update headers first
+        updateConsumptionDetailsHeaders();
+        
+        // Prepare all data
+        await prepareConsumptionDetailsDataForPagination();
+        
+        // Reset to first page
+        consumptionDetailsCurrentPage = 1;
+        
+        // Render first page
+        renderConsumptionDetailsPage();
+        
+        console.log('✅ Consumption details data loaded with pagination');
+        
+    } catch (error) {
+        console.error('❌ Error loading consumption details data with pagination:', error);
+        
+        const tableBody = document.querySelector('#consumption-details-table tbody');
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="13">Error loading consumption details data: ${error.message}</td>
+            </tr>
+        `;
+    }
+}
+
+function loadPreviousConsumptionDetailsPage() {
+    if (consumptionDetailsCurrentPage > 1) {
+        consumptionDetailsCurrentPage--;
+        renderConsumptionDetailsPage();
+        console.log('📊 Loaded previous consumption details page:', consumptionDetailsCurrentPage);
+    }
+}
+
+function loadNextConsumptionDetailsPage() {
+    const totalPages = Math.ceil(consumptionDetailsTotalCount / consumptionDetailsPageSize);
+    if (consumptionDetailsCurrentPage < totalPages) {
+        consumptionDetailsCurrentPage++;
+        renderConsumptionDetailsPage();
+        console.log('📊 Loaded next consumption details page:', consumptionDetailsCurrentPage);
+    }
+}
+
+// User Blocking Management Pagination Functions
+async function prepareUserBlockingDataForPagination() {
+    console.log('📊 Preparing user blocking data for pagination...');
+    
+    allUserBlockingData = [];
+    
+    const sortedUsers = [...allUsers].sort((a, b) => a.localeCompare(b));
+    
+    await updateUserBlockingStatus();
+    
+    // Get user limits from database
+    let userLimitsFromDB = {};
+    try {
+        const dbLimitsQuery = `
+            SELECT user_id, daily_request_limit, monthly_request_limit
+            FROM bedrock_usage.user_limits
+        `;
+        const dbLimitsResult = await window.mysqlDataService.executeQuery(dbLimitsQuery);
+        
+        // Convert to lookup object
+        dbLimitsResult.forEach(row => {
+            userLimitsFromDB[row.user_id] = {
+                daily_limit: row.daily_request_limit || 350,
+                monthly_limit: row.monthly_request_limit || 5000,
+                warning_threshold: 60,
+                critical_threshold: 85
+            };
+        });
+        
+        console.log('📊 Loaded user limits from database for user blocking pagination:', Object.keys(userLimitsFromDB).length, 'users');
+    } catch (error) {
+        console.error('❌ Error loading user limits from database for user blocking pagination:', error);
+        userLimitsFromDB = {};
+    }
+    
+    // Prepare all user blocking data
+    for (const username of sortedUsers) {
+        const personTag = getUserPersonTag(username) || "Unknown";
+        const userTeam = getUserTeamFromDB(username);
+        
+        const userQuota = userLimitsFromDB[username] || { 
+            monthly_limit: 5000, 
+            daily_limit: 350,
+            warning_threshold: 60, 
+            critical_threshold: 85 
+        };
+        
+        const monthlyTotal = userMetrics[username]?.monthly || 0;
+        const monthlyLimit = userQuota.monthly_limit;
+        const monthlyPercentage = Math.round((monthlyTotal / monthlyLimit) * 100);
+        
+        const dailyTotal = userMetrics[username]?.daily?.[10] || 0;
+        const dailyLimit = userQuota.daily_limit;
+        const dailyPercentage = Math.round((dailyTotal / dailyLimit) * 100);
+        
+        // Determine user status and admin privileges
+        let isBlocked = userBlockingStatus && userBlockingStatus[username];
+        let hasAdminPrivileges = false;
+        
+        // Check userAdminProtection for admin privileges
+        if (userAdminProtection && userAdminProtection[username]) {
+            hasAdminPrivileges = true;
+        }
+        
+        // Generate status
+        let status;
+        if (isBlocked) {
+            status = hasAdminPrivileges ? 'BLOCKED_ADM' : 'BLOCKED';
+        } else {
+            status = hasAdminPrivileges ? 'ACTIVE_ADM' : 'ACTIVE';
+        }
+        
+        allUserBlockingData.push({
+            username,
+            personTag,
+            userTeam,
+            status,
+            isBlocked,
+            hasAdminPrivileges,
+            dailyTotal,
+            dailyLimit,
+            dailyPercentage,
+            monthlyTotal,
+            monthlyLimit,
+            monthlyPercentage
+        });
+    }
+    
+    userBlockingTotalCount = allUserBlockingData.length;
+    console.log('📊 Prepared', userBlockingTotalCount, 'users for user blocking pagination');
+}
+
+function renderUserBlockingPage() {
+    console.log('📊 Rendering user blocking page', userBlockingCurrentPage, 'with page size', userBlockingPageSize);
+    
+    const tableBody = document.querySelector('#user-blocking-status-table tbody');
+    if (!tableBody) {
+        console.error('❌ Table body #user-blocking-status-table tbody not found');
+        return;
+    }
+    
+    tableBody.innerHTML = '';
+    
+    if (allUserBlockingData.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="8">No users found</td>
+            </tr>
+        `;
+        updateUserBlockingPaginationInfo();
+        return;
+    }
+    
+    // Calculate start and end indices
+    const startIndex = (userBlockingCurrentPage - 1) * userBlockingPageSize;
+    const endIndex = Math.min(startIndex + userBlockingPageSize, userBlockingTotalCount);
+    
+    // Get the data for current page
+    const pageData = allUserBlockingData.slice(startIndex, endIndex);
+    
+    // Render the rows
+    pageData.forEach(userData => {
+        // Generate status badge
+        let statusBadge;
+        const statusClass = userData.status.toLowerCase().replace('_', '-');
+        
+        statusBadge = `
+            <span class="status-badge ${statusClass}">
+                ${userData.status}
+            </span>
+        `;
+        
+        // Generate action buttons
+        let actionButtons = '';
+        if (userData.isBlocked) {
+            actionButtons = `
+                <button class="btn-unblock" onclick="unblockUser('${userData.username}')">
+                    Unblock
+                </button>
+            `;
+        } else {
+            actionButtons = `
+                <button class="btn-block" onclick="blockUser('${userData.username}')">
+                    Block
+                </button>
+            `;
+        }
+        
+        tableBody.innerHTML += `
+            <tr>
+                <td>${userData.username}</td>
+                <td>${userData.personTag}</td>
+                <td>${userData.userTeam}</td>
+                <td>${statusBadge}</td>
+                <td>${userData.dailyTotal}/${userData.dailyLimit}</td>
+                <td>${window.createPercentageIndicator(userData.dailyPercentage)}</td>
+                <td>${userData.monthlyTotal}/${userData.monthlyLimit}</td>
+                <td>${actionButtons}</td>
+            </tr>
+        `;
+    });
+    
+    // Update pagination info
+    updateUserBlockingPaginationInfo();
+    
+    console.log('📊 Rendered', pageData.length, 'users on user blocking page', userBlockingCurrentPage);
+}
+
+function updateUserBlockingPaginationInfo() {
+    const startIndex = (userBlockingCurrentPage - 1) * userBlockingPageSize;
+    const endIndex = Math.min(startIndex + userBlockingPageSize, userBlockingTotalCount);
+    const totalPages = Math.ceil(userBlockingTotalCount / userBlockingPageSize);
+    
+    // Update info text - using the correct ID from HTML
+    const infoElement = document.getElementById('blocking-status-info');
+    if (infoElement) {
+        infoElement.textContent = `Showing ${startIndex + 1}-${endIndex} of ${userBlockingTotalCount} users`;
+    }
+    
+    // Update page info - using the correct ID from HTML
+    const pageInfoElement = document.getElementById('blocking-status-page-info');
+    if (pageInfoElement) {
+        pageInfoElement.textContent = `Page ${userBlockingCurrentPage} of ${totalPages}`;
+    }
+    
+    // Update button states - using the correct IDs from HTML
+    const prevButton = document.getElementById('prev-blocking-status-btn');
+    const nextButton = document.getElementById('next-blocking-status-btn');
+    
+    if (prevButton) {
+        prevButton.disabled = userBlockingCurrentPage <= 1;
+    }
+    
+    if (nextButton) {
+        nextButton.disabled = userBlockingCurrentPage >= totalPages;
+    }
+}
+
+async function loadUserBlockingDataWithPagination() {
+    console.log('📊 Loading user blocking data with pagination...');
+    
+    try {
+        // Prepare all data
+        await prepareUserBlockingDataForPagination();
+        
+        // Reset to first page
+        userBlockingCurrentPage = 1;
+        
+        // Render first page
+        renderUserBlockingPage();
+        
+        console.log('✅ User blocking data loaded with pagination');
+        
+    } catch (error) {
+        console.error('❌ Error loading user blocking data with pagination:', error);
+        
+        const tableBody = document.querySelector('#user-blocking-status-table tbody');
+        if (tableBody) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="8">Error loading user blocking data: ${error.message}</td>
+                </tr>
+            `;
+        }
+    }
+}
+
+function loadPreviousUserBlockingPage() {
+    if (userBlockingCurrentPage > 1) {
+        userBlockingCurrentPage--;
+        renderUserBlockingPage();
+        console.log('📊 Loaded previous user blocking page:', userBlockingCurrentPage);
+    }
+}
+
+function loadNextUserBlockingPage() {
+    const totalPages = Math.ceil(userBlockingTotalCount / userBlockingPageSize);
+    if (userBlockingCurrentPage < totalPages) {
+        userBlockingCurrentPage++;
+        renderUserBlockingPage();
+        console.log('📊 Loaded next user blocking page:', userBlockingCurrentPage);
+    }
+}
+
+function changeUserBlockingPageSize() {
+    const pageSizeSelect = document.getElementById('user-blocking-page-size');
+    if (pageSizeSelect) {
+        userBlockingPageSize = parseInt(pageSizeSelect.value);
+        userBlockingCurrentPage = 1; // Reset to first page
+        renderUserBlockingPage();
+        console.log('📊 Changed user blocking page size to:', userBlockingPageSize);
+    }
+}
+
+// Functions for HTML pagination controls (using the correct IDs from HTML)
+function loadPreviousBlockingStatusPage() {
+    if (userBlockingCurrentPage > 1) {
+        userBlockingCurrentPage--;
+        renderUserBlockingPage();
+        console.log('📊 Loaded previous blocking status page:', userBlockingCurrentPage);
+    }
+}
+
+function loadNextBlockingStatusPage() {
+    const totalPages = Math.ceil(userBlockingTotalCount / userBlockingPageSize);
+    if (userBlockingCurrentPage < totalPages) {
+        userBlockingCurrentPage++;
+        renderUserBlockingPage();
+        console.log('📊 Loaded next blocking status page:', userBlockingCurrentPage);
+    }
+}
+
+// Functions for HTML pagination controls (using the correct IDs from HTML)
+function loadPreviousBlockingStatusPage() {
+    if (userBlockingCurrentPage > 1) {
+        userBlockingCurrentPage--;
+        renderUserBlockingPage();
+        console.log('📊 Loaded previous blocking status page:', userBlockingCurrentPage);
+    }
+}
+
+function loadNextBlockingStatusPage() {
+    const totalPages = Math.ceil(userBlockingTotalCount / userBlockingPageSize);
+    if (userBlockingCurrentPage < totalPages) {
+        userBlockingCurrentPage++;
+        renderUserBlockingPage();
+        console.log('📊 Loaded next blocking status page:', userBlockingCurrentPage);
+    }
+}
+
+// Make pagination functions globally available
+window.loadPreviousUserUsagePage = loadPreviousUserUsagePage;
+window.loadNextUserUsagePage = loadNextUserUsagePage;
+window.loadPreviousTeamUsersPage = loadPreviousTeamUsersPage;
+window.loadNextTeamUsersPage = loadNextTeamUsersPage;
+window.loadPreviousConsumptionDetailsPage = loadPreviousConsumptionDetailsPage;
+window.loadNextConsumptionDetailsPage = loadNextConsumptionDetailsPage;
+window.loadPreviousUserBlockingPage = loadPreviousUserBlockingPage;
+window.loadNextUserBlockingPage = loadNextUserBlockingPage;
+window.changeUserBlockingPageSize = changeUserBlockingPageSize;
+window.loadUserBlockingDataWithPagination = loadUserBlockingDataWithPagination;
+window.loadPreviousBlockingStatusPage = loadPreviousBlockingStatusPage;
+window.loadNextBlockingStatusPage = loadNextBlockingStatusPage;
 
 // Make the function available globally immediately
 window.refreshConsumptionDetails = refreshConsumptionDetails;
