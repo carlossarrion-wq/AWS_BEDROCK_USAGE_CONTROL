@@ -944,9 +944,12 @@ class BedrockMySQLDataService {
             case '7d':
                 timeCondition = 'request_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
                 break;
+<<<<<<< HEAD
             case '10d':
                 timeCondition = 'request_timestamp >= DATE_SUB(NOW(), INTERVAL 10 DAY)';
                 break;
+=======
+>>>>>>> 1bf7cd4cbe4b8e387bab387928a59d7c7a740dcc
             case '30d':
                 timeCondition = 'request_timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
                 break;

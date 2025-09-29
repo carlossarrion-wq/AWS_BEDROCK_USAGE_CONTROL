@@ -426,7 +426,11 @@ async function performManualBlock() {
                 };
                 
                 const policyResponse = await lambda.invoke({
+<<<<<<< HEAD
                     FunctionName: 'bedrock-realtime-usage-controller',
+=======
+                    FunctionName: 'bedrock-policy-manager-enhanced',
+>>>>>>> 1bf7cd4cbe4b8e387bab387928a59d7c7a740dcc
                     InvocationType: 'RequestResponse',
                     Payload: JSON.stringify(policyPayload)
                 }).promise();

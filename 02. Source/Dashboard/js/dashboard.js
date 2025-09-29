@@ -1874,7 +1874,11 @@ async function loadModelUsageData() {
     
     try {
         // First, get all unique models from the database
+<<<<<<< HEAD
         const allModelsData = await window.mysqlDataService.getModelUsageBreakdown(null, '10d');
+=======
+        const allModelsData = await window.mysqlDataService.getModelUsageBreakdown(null, '30d');
+>>>>>>> 1bf7cd4cbe4b8e387bab387928a59d7c7a740dcc
         console.log('📊 Raw model data from database:', allModelsData);
         
         if (!allModelsData || allModelsData.length === 0) {
@@ -1936,7 +1940,11 @@ async function loadModelUsageData() {
             // For each user in the team, get their model usage
             for (const username of teamUsers) {
                 try {
+<<<<<<< HEAD
                     const userModelData = await window.mysqlDataService.getModelUsageBreakdown(username, '10d');
+=======
+                    const userModelData = await window.mysqlDataService.getModelUsageBreakdown(username, '30d');
+>>>>>>> 1bf7cd4cbe4b8e387bab387928a59d7c7a740dcc
                     console.log(`📊 User ${username} model data:`, userModelData);
                     
                     // Add user's model usage to team totals
@@ -1961,9 +1969,14 @@ async function loadModelUsageData() {
         
         // Build table rows - NOW EACH MODEL IS A ROW
         uniqueModels.forEach(model => {
+<<<<<<< HEAD
             // TEMPORARILY REMOVED: Trim model name - get only the last part after "/"
             // const displayModelName = model.includes('/') ? model.split('/').pop() : model;
             const displayModelName = model; // Show full model name temporarily
+=======
+            // Trim model name - get only the last part after "/"
+            const displayModelName = model.includes('/') ? model.split('/').pop() : model;
+>>>>>>> 1bf7cd4cbe4b8e387bab387928a59d7c7a740dcc
             let rowHtml = `<tr><td><strong>${displayModelName}</strong></td>`;
             let modelTotal = 0;
             
